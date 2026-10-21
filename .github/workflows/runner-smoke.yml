@@ -1,0 +1,14 @@
+name: runner-smoke
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: [self-hosted, agl-kvm]
+    timeout-minutes: 15
+    steps:
+      - run: |
+          uname -a; id; nproc; free -g | head -2
+          ls -l /dev/kvm || echo "no kvm"
+          kas --version; qemu-system-x86_64 --version | head -1
+          docker info --format '{{.ServerVersion}}' || echo "no docker"
