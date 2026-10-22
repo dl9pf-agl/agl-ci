@@ -151,6 +151,24 @@ kas_ci_includes() {
   if [ "${CI:-}" = "true" ]; then
     printf ':build/ci-kas/ci-only.yml'
   fi
+  if [ -n "${AGL_PIN_REPO:-}" ]; then
+    printf ':%s' "$(kas_pin_fragment)"
+  fi
+}
+
+# Repo under test: AGL_PIN_REPO (e.g. meta-agl) at AGL_PIN_SHA from AGL_PIN_URL (fork PRs: the fork).
+# Written next to ci-only.yml, appended last so it overrides agl-ucb's branch with the exact commit.
+kas_pin_fragment() {
+  cat > "$TREE/build/ci-kas/layer-pin.yml" <<YAML
+header:
+  version: 22
+repos:
+  $AGL_PIN_REPO:
+    url: $AGL_PIN_URL
+    branch:
+    commit: $AGL_PIN_SHA
+YAML
+  printf 'build/ci-kas/layer-pin.yml'
 }
 
 kas_runtime_args() {

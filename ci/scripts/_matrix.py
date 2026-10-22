@@ -38,7 +38,7 @@ from pathlib import Path
 
 import yaml
 
-# Build tree = the agl-ucb checkout with the layer repos cloned inside (scripts/checkout-layers.sh).
+# Build tree = the agl-ucb checkout with the layer repos cloned inside (scripts/kas, base.yml url/branch).
 # Every layer repo that has ci/build-matrix.yaml contributes its own images. AGL_SCOPE=<repo> limits
 # the run to that repo plus every repo that (transitively) lists it under `needs:` - the downstream chain.
 TREE = Path(os.environ.get("AGL_TREE", ".")).resolve()

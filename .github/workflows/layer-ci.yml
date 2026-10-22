@@ -12,6 +12,10 @@ on:
         description: 'push-pr | nightly | release | dispatch; empty = derive from the calling event'
         type: string
         default: ''
+      ucb_ref:
+        description: 'agl-ucb branch/tag/SHA to build with; empty = default branch'
+        type: string
+        default: ''
       kas_exec:
         description: 'kas-container (signed builder image) | kas (inside the runner image)'
         type: string
@@ -24,10 +28,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  LAYERS_BASE: https://github.com/${{ github.repository_owner }}
-  # repo under test: the PR head (fork URL for fork PRs) or this repo at the pushed commit
-  UNDER_TEST_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}.git
-  UNDER_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  # repo under test, pinned over agl-ucb's branch by kas (ci/scripts/_kas_runtime_args.sh): the PR head
+  # (fork URL for fork PRs) or this repo at the pushed commit
+  AGL_PIN_REPO: ${{ inputs.repo }}
+  AGL_PIN_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}.git
+  AGL_PIN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   matrix:
@@ -48,6 +53,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/agl-ucb
+          ref: ${{ inputs.ucb_ref }}
           path: tree
           persist-credentials: false
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
@@ -60,9 +66,6 @@ jobs:
           DISPATCH_TIER: ${{ github.event.inputs.tier }}
         run: |
           set -euo pipefail
-          var="LAYER_${REPO//-/_}"
-          export "$var=$UNDER_TEST_URL@$UNDER_TEST_SHA"
-          AGL_LAYERS_BASE="$LAYERS_BASE" tree/scripts/checkout-layers.sh
           tier="$TIER_IN"
           if [ -z "$tier" ]; then
             case "$EVENT" in
@@ -74,6 +77,9 @@ jobs:
           fi
           builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
           agl-ci/scripts/verify-release.sh "$builder"
+          # kas clones the layers (repo under test pinned); the matrices live in them
+          python3 -m venv "$RUNNER_TEMP/kas" && "$RUNNER_TEMP/kas/bin/pip" install -q --require-hashes -r agl-ci/docker/requirements.txt
+          PATH="$RUNNER_TEMP/kas/bin:$PATH" AGL_TREE=$PWD/tree KAS_EXEC=kas CI=true agl-ci/ci/scripts/checkout.sh
           {
             echo "tier=$tier"
             echo "builder=$builder"
@@ -119,15 +125,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository_owner }}/agl-ucb
+          ref: ${{ inputs.ucb_ref }}
           path: tree
           persist-credentials: false
-      - name: layers
-        env:
-          REPO: ${{ inputs.repo }}
-        run: |
-          var="LAYER_${REPO//-/_}"
-          export "$var=$UNDER_TEST_URL@$UNDER_TEST_SHA"
-          AGL_LAYERS_BASE="$LAYERS_BASE" tree/scripts/checkout-layers.sh
       - name: validate
         env:
           MACHINE: ${{ matrix.machine }}
