@@ -3,13 +3,17 @@ name: images
 # PRs: build twice + compare only (no push, no signing, no id-token).
 on:
   pull_request:
-    paths: [docker/**, scripts/build-image.sh, .github/workflows/images.yml]
+    paths: [docker/**, policy/**, scripts/build-image.sh, scripts/cve-scan.sh, .github/workflows/images.yml]
   push:
     branches: [main]
     tags: ['v*']
   schedule:
     - cron: '17 3 * * 1'   # weekly reproducibility canary
   workflow_dispatch:
+    inputs:
+      build_fail_on:
+        description: 'Override policy/cve.env BUILD_FAIL_ON (none|low|medium|high|critical)'
+        required: false
 
 permissions: {}
 
@@ -73,10 +77,41 @@ jobs:
           echo "a=$a b=$b"; [ "$a" = "$b" ] || { echo "::error::runner is not reproducible"; exit 1; }
           echo "digest=$a" >> "$GITHUB_OUTPUT"
 
+  scan:
+    name: cve scan (build bar)
+    needs: [builder-compare, runner-compare]
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: builder-a, path: art/builder }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: runner-a, path: art/runner }
+      - name: install grype (sha256-pinned)
+        run: |
+          . docker/pins.env
+          curl -fsSL -o g.tgz "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "${GRYPE_SHA256}  g.tgz" | sha256sum -c -
+          sudo tar -xzf g.tgz -C /usr/local/bin grype
+      - name: scan (report always, fail only at the bar)
+        env: { FAIL_ON: "${{ inputs.build_fail_on }}" }
+        run: |
+          rc=0
+          for img in builder runner; do
+            scripts/cve-scan.sh "oci-archive:art/$img/$img.tar" build "report/$img" || rc=1
+            { echo "## $img"; cat "report/$img/cve-build.md"; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $rc
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: cve-build-report, path: report, retention-days: 90 }
+
   publish:
     name: publish + sign
     if: github.event_name != 'pull_request'
-    needs: [builder-compare, runner-compare]
+    needs: [builder-compare, runner-compare, scan]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
