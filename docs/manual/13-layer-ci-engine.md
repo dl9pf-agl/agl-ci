@@ -32,6 +32,13 @@ Without `AGL_SCOPE` all repos in the tree are included (nightly).
 `KAS_CONTAINER_ENGINE` (default `docker`); `KAS_EXEC=kas`: `kas` in the current environment (e.g. inside the signed runner
 image, which contains kas and the Yocto host tools). Everything goes through `kas_run` in `_kas_runtime_args.sh`.
 
+## Reusable workflow
+`.github/workflows/layer-ci.yml` is called by the layer repos, pinned by full SHA. Inputs: `repo` (repo under test, scopes
+the downstream chain), `tier` (default: derived from the event), `kas_exec` (`kas-container` | `kas`), `ucb_ref` (agl-ucb
+ref to build with, default branch when empty; use it to test an agl-ucb branch before merging). The builder image is
+pinned in `ci/builder.digest` and verified (`scripts/verify-release.sh`) in the `matrix` job. Bump the digest after every
+published builder (digest in the `publish` job log of the `images` run on `main`).
+
 ## Running on a desk
 ```
 git clone https://github.com/dl9pf-agl/agl-ucb && cd agl-ucb
