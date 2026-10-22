@@ -15,7 +15,7 @@ imported yet (they still call `make`); the matrix and scripts are forge-independ
 - **Repo under test** = env `AGL_PIN_REPO`, `AGL_PIN_URL` (fork URL for fork PRs), `AGL_PIN_SHA`. The engine writes
   `<tree>/build/ci-kas/layer-pin.yml` (`url`, `commit`, `branch:` cleared) and appends it last to the kas chain, so kas
   builds exactly that commit and nothing is reset to a branch tip. The `matrix` job first runs `ci/scripts/checkout.sh`
-  (`kas checkout` of `base.yml` + the pin) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
+  (`kas checkout` of `base.yml` + `pins.yml` + the pin; `pins.yml` in agl-ucb pins the externals, `meta-agl-demo` and `meta-agl-devel`, so no layer follows a branch tip except the repo under test) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
 - **Engine** = `agl-ci/ci/scripts` (+ `ci/kas/*.yml`, staged into `<tree>/build/ci-kas/` at run time because kas needs
   them inside the work dir).
 - `AGL_TREE` selects the tree (default: current directory).
