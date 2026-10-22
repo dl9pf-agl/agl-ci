@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   smoke:
-    runs-on: [self-hosted, agl]
+    runs-on: [self-hosted, agl-pr]
     timeout-minutes: 15
     steps:
       - run: |

@@ -24,7 +24,7 @@ runner image and `/dev/kvm` goes straight to the container.
 3. Pin the digest: `echo sha256:... > kit/runner.digest` (PR; the digest is printed by the `publish` job and
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
-   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default `agl-kvm`; the test runner used `agl`), `MEM_LIMIT`,
+   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default `agl-pr`; planned `agl-release` for release jobs on their own slots; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT`,
    `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`.
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
@@ -42,5 +42,8 @@ Bump pins (chapter 03), merge, wait for publish+verify, put the new digest into 
 
 ## Open points
 `/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested; the old
-test runner (`Debian-1303-trixie-amd64-base`, bare host install, labels `self-hosted Linux X64 agl`) must be
+test runner (`Debian-1303-trixie-amd64-base`, bare host install, labels `self-hosted Linux X64 agl` (removed)) must be
 removed from the org when the kit replaces it.
+
+## Labels
+`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-release`: release jobs, to be given their own slots when the release workflow exists (decision 2026-10-22: rename only for now). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
