@@ -37,3 +37,11 @@ Each entry: decision, reason, alternatives not taken.
   (verify against SP 800-63-4 text before citing).
 - `yubikey`: independent of GitHub settings; key non-exportable, touch required.
 - `both`: highest; use for releases consumed by safety/cybersecurity-relevant products.
+
+## Lint gate (decided 2026-10-22)
+| Decision | Reason | Alternatives considered |
+|---|---|---|
+| `lint.yml` on every PR/push, first job of `images.yml` (`needs: lint`) | Nothing builds or publishes when the pipeline definition itself is unsafe | Required check only (does not stop tag-triggered runs); advisory first (weakens the gate) |
+| actionlint + zizmor + shellcheck + hadolint, pinned binaries with sha256 | Correctness and security tools are complementary (arXiv 2601.14455); no extra third-party actions | poutine/octoscan later if gaps show; marketplace actions for each tool (more trust surface) |
+| Break-glass = `LINT_MODE=report` repo variable or dispatch input | A lint false positive must not block a security fix | Admin-only bypass of the ruleset (leaves no trace in the run) |
+| Scorecard and CodeQL scheduled, not per-PR | Slow and noisy as gates; they provide audit evidence | Per-PR gates |

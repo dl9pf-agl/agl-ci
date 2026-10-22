@@ -3,7 +3,7 @@
 # Usage: sign-release.sh builder|runner TAG   (e.g. sign-release.sh builder 1.0.0)
 # Verifies the CI signature first, signs the digest (touch the key), then verifies the result.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 img="${1:?builder|runner}"; tag="${2:?tag}"
 ref="ghcr.io/${AGL_CI_REPO:-dl9pf-agl/agl-ci}/$img:$tag"
 scripts/verify-release.sh "$ref"                       # never countersign what CI did not sign

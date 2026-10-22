@@ -4,7 +4,7 @@
 #   --release: additionally require a valid release-engineer (YubiKey) signature from keys/release/*.pub
 # Needs: cosign (version in docker/pins.env), docker buildx, gh (for provenance).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 ref="${1:?image ref}"; release="${2:-}"
 repo="${AGL_CI_REPO:-dl9pf-agl/agl-ci}"
 issuer=https://token.actions.githubusercontent.com

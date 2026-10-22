@@ -6,6 +6,7 @@ ARG BASE_DIGEST
 FROM docker.io/library/debian@${BASE_DIGEST}
 ARG SNAPSHOT
 ARG SOURCE_DATE_EPOCH
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PYTHONDONTWRITEBYTECODE=1
 
 # apt from a dated snapshot (not deb.debian.org): same package set on every build.

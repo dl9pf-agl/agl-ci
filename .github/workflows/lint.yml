@@ -1,0 +1,31 @@
+name: lint
+# Lint + security gate for workflows, scripts and Dockerfiles. Runs on every PR/push and is the first job of images.yml.
+# Break-glass: repo variable LINT_MODE=report (admin only, audit-logged) or workflow_dispatch input mode=report.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'enforce | report (report = never fail; for test runs and break-glass)'
+        default: enforce
+
+permissions: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - run: scripts/install-lint-tools.sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: lint
+        env:
+          LINT_MODE: ${{ inputs.mode || vars.LINT_MODE || 'enforce' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ "$LINT_MODE" = enforce ] || echo "## LINT RUNNING IN '$LINT_MODE' MODE - findings do not fail the run" >> "$GITHUB_STEP_SUMMARY"
+          scripts/lint.sh

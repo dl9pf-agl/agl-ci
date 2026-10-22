@@ -3,7 +3,7 @@ name: images
 # PRs: build twice + compare only (no push, no signing, no id-token).
 on:
   pull_request:
-    paths: [docker/**, policy/**, scripts/build-image.sh, scripts/cve-scan.sh, .github/workflows/images.yml]
+    paths: [docker/**, policy/**, .hadolint.yaml, scripts/build-image.sh, scripts/cve-scan.sh, .github/workflows/images.yml]
   push:
     branches: [main]
     tags: ['v*']
@@ -22,7 +22,12 @@ env:
   NAMESPACE: ${{ github.repository }}   # ghcr.io/<owner>/<repo>/{builder,runner}
 
 jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml
+    permissions: { contents: read }
+
   builder:
+    needs: lint
     name: builder (${{ matrix.n }})
     strategy: { fail-fast: false, matrix: { n: [a, b] } }
     runs-on: ubuntu-24.04
@@ -199,9 +204,9 @@ jobs:
           echo "$GH_TOKEN" | cosign login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
           id="https://github.com/$GITHUB_REPOSITORY/.github/workflows/images.yml@$GITHUB_REF"
           for p in "builder $B" "runner $R"; do
-            set -- $p; ref="$REGISTRY/$NAMESPACE/$1@$2"
+            read -r name dig <<< "$p"; ref="$REGISTRY/$NAMESPACE/$name@$dig"
             cosign verify --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
             cosign verify-attestation --type spdxjson --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
             gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY"
-            echo "OK $1 $2"
+            echo "OK $name $dig"
           done

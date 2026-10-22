@@ -1,0 +1,3 @@
+# Reviewed ignores. Each needs a reason.
+ignored:
+  - DL3008   # apt versions are pinned by the dated snapshot.debian.org archive (docker/pins.env), not per package

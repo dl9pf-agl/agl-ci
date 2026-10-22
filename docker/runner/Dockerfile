@@ -5,11 +5,12 @@ ARG BUILDER=builder
 FROM ${BUILDER}
 ARG RUNNER_VERSION
 ARG RUNNER_SHA256
-USER root
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+USER 0
 RUN apt-get update -qq && apt-get install -y --no-install-recommends curl jq sudo docker-cli libicu76 libssl3t64 \
  && apt-get clean && rm -rf /var/lib/apt/lists/* /var/log/* /var/cache/ldconfig/aux-cache
 RUN useradd --create-home --uid 1001 --shell /bin/bash runner && sed -i -E 's/^(runner:[^:]*:)[0-9]*:/\119000:/' /etc/shadow /etc/shadow-
-USER runner
+USER 1001
 WORKDIR /home/runner/actions-runner
 RUN curl -fsSL -o r.tgz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" \
  && echo "${RUNNER_SHA256}  r.tgz" | sha256sum -c - && tar xzf r.tgz && rm r.tgz
