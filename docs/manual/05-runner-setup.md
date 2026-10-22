@@ -10,7 +10,7 @@ earlier on a dev host with a locally built image.
    `policy/project.env`, pulls `ghcr.io/<owner>/agl-ci/runner@<digest>`. Nothing is built on the host.
 3. Writes `/etc/agl-runner/runner.env` (0600; token only here), installs `run-loop.sh` and the systemd unit,
    starts `agl-runner@N`.
-Per job (`run-loop.sh`): JIT registration (single-use config), private network, workspace volume (owned by uid 1001),
+Per job (`run-loop.sh`): private network, workspace volume and sidecar are prepared and health-checked FIRST; only then the JIT registration (single-use config) is requested, so a broken engine registers nothing. Details: private network, workspace volume (owned by uid 1001),
 privileged `docker:dind` sidecar pinned by digest (`DIND_IMAGE` in `docker/pins.env`) and an unprivileged runner
 container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no sidecar, kas runs directly in the
 runner image and `/dev/kvm` goes straight to the container.
@@ -47,3 +47,9 @@ removed from the org when the kit replaces it.
 
 ## Labels
 `agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-release`: release jobs, to be given their own slots when the release workflow exists (decision 2026-10-22: rename only for now). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+
+## Failure behaviour (run-loop.sh)
+- Preparation fails (network, volume, sidecar not answering within ~3 min): cleanup, back off 30 s x failures (max 10 min), no GitHub call.
+- Runner container exits within 30 s (never served a job): its registration is deleted via the API, then back off.
+- A run longer than 30 s resets the backoff.
+Lesson (2026-10-22): the first version requested the JIT config before preparing the sidecar, so a failing engine created one stale runner registration every ~11 s (44 in 6 minutes).
