@@ -1,0 +1,12 @@
+[Unit]
+Description=AGL CI ephemeral runner slot %i
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/agl-runner/run-loop.sh %i
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

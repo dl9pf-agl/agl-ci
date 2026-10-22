@@ -8,6 +8,6 @@ mode="${LINT_MODE:-enforce}"; fail=0
 run() { echo "::group::$*"; "$@" || { echo "FAILED: $1"; fail=1; }; echo "::endgroup::"; }
 run actionlint -color
 if [ -n "${GH_TOKEN:-}" ]; then run zizmor --format=github .; else run zizmor --offline --format=github .; fi
-run shellcheck -x scripts/*.sh docker/builder/entrypoint.sh
+run shellcheck -x scripts/*.sh kit/*.sh docker/builder/entrypoint.sh
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi
 exit "$fail"

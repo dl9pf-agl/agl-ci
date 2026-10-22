@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 img="${1:?builder|runner}"; tag="${2:?tag}"
 . policy/project.env
-ref="$REGISTRY/${AGL_CI_REPO:-$PROJECT_REPO}/$img:$tag"
+ref="$REGISTRY/$PROJECT_REPO/$img:$tag"
 scripts/verify-release.sh "$ref"                       # never countersign what CI did not sign
 digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
 echo "Signing ${ref%%:*}@$digest - PIN prompt, then touch the YubiKey"

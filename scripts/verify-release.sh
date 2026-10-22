@@ -7,9 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ref="${1:?image ref}"; release="${2:-}"
 . policy/project.env
-repo="${AGL_CI_REPO:-$PROJECT_REPO}"
-issuer=https://token.actions.githubusercontent.com
-idre="^https://github.com/${repo}/\.github/workflows/images\.yml@refs/(heads/main|tags/v[0-9].*)\$"
+issuer="$OIDC_ISSUER"; idre="$CI_IDENTITY_REGEXP"
 digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
 pinned="${ref%%[:@]*}@$digest"
 echo "digest: $digest"
