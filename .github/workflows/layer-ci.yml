@@ -131,6 +131,8 @@ jobs:
           ref: ${{ inputs.ucb_ref }}
           path: tree
           persist-credentials: false
+      - name: layers
+        run: agl-ci/ci/scripts/checkout.sh
       - name: validate
         env:
           MACHINE: ${{ matrix.machine }}
