@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MIT
+header:
+  version: 23
+  includes:
+    - kas/feature/agl-devel.yml
+
+# Colon-joined automatically whenever CI=true (see ci/scripts/setup.sh/build.sh/validate.sh's
+# kas_ci_includes helper) - never appears in ci/build-matrix.yaml's features: column, never
+# part of a developer's local build unless they set CI=true themselves.
+#
+# agl-devel: hardware-in-the-loop testing needs passwordless login, so every CI build gets it,
+# even though it's an optional local-desk convenience for developers (who add it themselves via
+# FEATURES=...,agl-devel instead).
+#
+# The rest is ported from AGL's own aglsetup.sh agl-ci feature template
+# (meta-agl/templates/feature/agl-ci/99_local.conf.inc). Generically useful CI tuning is kept
+# live; AGL's own infra pins (premirror/sstate-mirror/prserv/hashserv, pointing at AGL's own
+# download.automotivelinux.org / internal servers) are commented out, not deleted - this
+# project doesn't own equivalent infra yet, but the exact config to reactivate is preserved
+# here for whenever it does.
+local_conf_header:
+  ci-only: |
+    AGL_FEATURES:append = " AGLCI"
+    # opencv seems to have a parallel make bug
+    PARALLEL_MAKE:pn-opencv = "-j 1"
+
+    #AGL_HOST_PREMIRROR ?= "http://download.automotivelinux.org"
+    #AGL_HOST_SSTATE_MIRROR ?= "http://download.automotivelinux.org"
+    #PREMIRRORS = " \
+    #git://.*/.*   ${AGL_HOST_PREMIRROR}/AGL/mirror/  \n \
+    #ftp://.*/.*   ${AGL_HOST_PREMIRROR}/AGL/mirror/  \n \
+    #http://.*/.*  ${AGL_HOST_PREMIRROR}/AGL/mirror/  \n \
+    #https://.*/.* ${AGL_HOST_PREMIRROR}/AGL/mirror/  \n \
+    #"
+    #SSTATE_MIRRORS = "  file://.* ${AGL_HOST_SSTATE_MIRROR}/sstate-mirror/master/${DEFAULTTUNE}/PATH;downloadfilename=PATH \n                  "
+
+    INHERIT += "buildhistory"
+    INHERIT += "buildstats"
+    INHERIT += "buildstats-summary"
+
+    #AGL_HOST_PRSERV ?= "10.30.72.18"
+    #AGL_HOST_HASHSERV ?= "10.30.72.18"
+    #BB_HASHSERVE = "${AGL_HOST_HASHSERV}:8787"
+    #BB_SIGNATURE_HANDLER = "OEEquivHash"
+    #PRSERV_HOST = "${AGL_HOST_PRSERV}:8585"
+
+    IMAGE_INSTALL:append = " curl"
+    IMAGE_NAME_SUFFIX = ""

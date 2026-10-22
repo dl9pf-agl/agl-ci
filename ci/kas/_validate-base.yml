@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MIT
+header:
+  version: 23
+
+# Bare oe-core, used ONLY by validate.sh's yocto-check-layer check. yocto-check-layer
+# manages its own layer-under-test additions (including meta-agl-core itself, via
+# auto-dependency resolution) and must NOT be run against a config that has any AGL layer
+# pre-loaded - that causes a duplicate BBFILE_COLLECTIONS conflict (found during
+# validation, see WIP.md "Implementation status"). Deliberately does NOT include
+# kas/base.yml (which pre-loads meta-agl-core/meta-agl-bsp) or set DISTRO=agl (whose
+# base-agl.inc lives inside meta-agl-core).
+machine: qemux86-64
+
+repos:
+  bitbake:
+    url: https://git.openembedded.org/bitbake
+    path: external/bitbake
+    branch: "2.18"
+    layers: {}
+  openembedded-core:
+    url: https://git.openembedded.org/openembedded-core
+    path: external/openembedded-core
+    branch: wrynose
+    layers:
+      meta:
+  meta-lts-mixins-rust:
+    url: https://git.yoctoproject.org/meta-lts-mixins
+    path: external/meta-lts-mixins_rust
+    branch: wrynose/rust
+  meta-openembedded:
+    url: https://github.com/openembedded/meta-openembedded
+    path: external/meta-openembedded
+    branch: wrynose
+    layers:
+      meta-oe:
+      meta-python:
+      meta-networking:
+      meta-multimedia:
+      meta-filesystems:
