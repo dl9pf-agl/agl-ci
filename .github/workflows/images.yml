@@ -113,10 +113,26 @@ jobs:
         if: always()
         with: { name: cve-build-report, path: report, retention-days: 90 }
 
+  smoke:
+    name: smoke (start the images)
+    needs: [builder-compare, runner-compare]
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: builder-a, path: art/builder }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { name: runner-a, path: art/runner }
+      - run: |
+          scripts/smoke-image.sh builder art/builder/builder.tar
+          scripts/smoke-image.sh runner art/runner/runner.tar
+
   publish:
     name: publish + sign
     if: github.event_name != 'pull_request'
-    needs: [builder-compare, runner-compare, scan]
+    needs: [builder-compare, runner-compare, scan, smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
