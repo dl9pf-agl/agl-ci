@@ -12,3 +12,11 @@ Status: **planned**. Rule: only claims that are evidenced by a committed artifac
 
 Gaps to close before claiming any of the above: enable branch rulesets and signed commits, add `SECURITY.md`,
 Scorecard workflow, CODEOWNERS, Dependabot for actions; decide SLSA L3 generator.
+
+## Release report contents (planned, `report.md` / `report.html`)
+Completeness; provenance (commit, workflow, runner type, pins and diff to previous release, signature table);
+reproducibility (digests of all builds); vulnerabilities (Grype, KEV/EPSS, OpenVEX waivers shown); licenses;
+CRA block (SBOM, security contact, support period, update path, vulnerability status at release);
+R155 / ISO 21434 supplier block (tool versions, build-environment integrity, approvals, change history,
+evidence retention). CRA dates to verify against Regulation (EU) 2024/2847: reporting duties from 2026-09-11,
+rest from 2027-12-11.
