@@ -1,0 +1,16 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/OWNER/agl-ci/vex/CVE-YYYY-NNNN",
+  "author": "Full Name <mail> (release engineer)",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": { "name": "CVE-YYYY-NNNN" },
+      "products": [ { "@id": "pkg:deb/debian/PACKAGE@VERSION?arch=amd64&distro=debian-13.7" } ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Why: one sentence a reviewer can verify. Reference: tracker/advisory URL, review date, re-review trigger."
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+# 13 Templating and portability
+
+Status: requirement and target structure **decided**; refactor partly done (`policy/project.env`), rest **planned**.
+
+## Requirement
+Members must be able to adopt this pipeline for their own repos, and later on GitLab or Forgejo. Therefore
+logic and project identity are separated from forge glue.
+
+## Layers
+| Layer | Files | Forge-specific? |
+|---|---|---|
+| Engine | `docker/**`, `scripts/*.sh`, `policy/**`, `docker/pins.env` | No. Needs bash, docker buildx, cosign, grype, python3, curl |
+| Project identity | `policy/project.env` (repo, registry, image list), `policy/cve.env`, `policy/vex/`, `keys/` | No |
+| Adapter | `.github/workflows/*.yml` | Yes: triggers, permissions, OIDC, environments, artifacts |
+
+Rule for new work: anything beyond "check out, install pinned tools, call a script" belongs in a script, not in
+workflow YAML. Names of the repo/registry come from `policy/project.env` or the forge's context, never literals.
+
+## Adopting on GitHub (today)
+1. Create a repo from this one (mark agl-ci as a *template repository* once the refactor below is done).
+2. Edit `policy/project.env`, `docker/pins.env` (verify every hash), `policy/cve.env`, replace `keys/release/`.
+3. Org settings per chapter 05; create environment `release` (chapter 06); set LINT_MODE only for break-glass.
+4. Run `lint` then `images` via PR; compare digests; read the manual chapters 03-04 before trusting anything.
+
+## Forge-specific pieces and equivalents
+| Piece | GitHub | GitLab | Forgejo |
+|---|---|---|---|
+| Keyless signing | Actions OIDC -> Fulcio | CI `id_tokens` with `sigstore` audience -> Fulcio (documented by Sigstore) | Unverified; check Forgejo Actions OIDC support before promising |
+| Build provenance | `attest-build-provenance` | cosign attest in-toto predicate / GitLab provenance | cosign attest in-toto predicate |
+| Release approval | environment + required reviewers, GitHub Mobile push | protected environment / manual job with approvals | no direct equivalent verified |
+| Code scanning of workflow YAML | zizmor, actionlint | actionlint not applicable; use gitlab-ci linters | actionlint/zizmor partly applicable |
+
+To keep these swappable: signing, attesting and verifying are called from scripts with the identity and issuer
+as parameters; the verify policy (`verify-release.sh`) already takes repo from `policy/project.env`. Remaining
+GitHub-only literals to remove: the OIDC issuer URL and workflow-path regexp in `verify-release.sh`,
+`skopeo`/`cosign` blocks inside `images.yml` (move to `scripts/publish-image.sh`), image names in `images.yml`
+(drive from `IMAGES`).
+
+## Planned refactor (in order)
+1. `scripts/publish-image.sh`, `scripts/sign-image.sh` (push, sign, attest) called from the workflow.
+2. `images.yml` matrix generated from `IMAGES` in `policy/project.env` (needs ordered builds: builder before runner).
+3. Issuer/identity regexp into `policy/project.env`.
+4. Mark as template repository; add `docs/manual/14-adopter-checklist.md` from the steps above.

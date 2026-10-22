@@ -16,6 +16,8 @@ runner kit updates the matching chapter in the same commit.
 | 09 | [Yocto-built builder experiment](09-yocto-experiment.md) | Parallel dogfooding track |
 | 10 | [CVE policy and scanning](10-cve-policy.md) | Two severity bars, grype, waivers, re-check |
 | 11 | [Lint and security gate](11-lint-gate.md) | actionlint, zizmor, shellcheck, hadolint; recovery path |
+| 12 | [VEX playbook](12-vex-playbook.md) | Waiving findings, responding to advisories |
+| 13 | [Templating and portability](13-templating.md) | Adopting agl-ci elsewhere, GitLab/Forgejo path |
 
 Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
 **planned**.
