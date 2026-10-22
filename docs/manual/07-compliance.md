@@ -20,3 +20,8 @@ CRA block (SBOM, security contact, support period, update path, vulnerability st
 R155 / ISO 21434 supplier block (tool versions, build-environment integrity, approvals, change history,
 evidence retention). CRA dates to verify against Regulation (EU) 2024/2847: reporting duties from 2026-09-11,
 rest from 2027-12-11.
+
+## Status of the repo-hygiene items (2026-10-22)
+Done: LICENSE, SECURITY.md, CODEOWNERS, Dependabot (actions), Scorecard workflow, `main` ruleset (PR + `lint`),
+secret scanning + push protection, SHA pinning, read-only token default (chapter 12). Open: signed commits, required
+reviews (needs a second engineer), org 2FA and org-level policies (owner action), first signed release tag.

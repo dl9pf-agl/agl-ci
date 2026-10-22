@@ -16,6 +16,7 @@ runner kit updates the matching chapter in the same commit.
 | 09 | [CVE policy, scanning, VEX playbook](09-cve-policy-and-vex.md) | Two severity bars, grype, waivers, advisory response |
 | 10 | [Lint and security gate](10-lint-gate.md) | actionlint, zizmor, shellcheck; recovery path |
 | 11 | [Templating and portability](11-templating.md) | Adopting agl-ci elsewhere, GitLab/Forgejo path |
+| 12 | [Repository hardening](12-repo-hardening.md) | Ruleset, secret scanning, Scorecard, approvals, owner-only settings |
 
 Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
 **planned**.

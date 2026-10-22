@@ -1,0 +1,7 @@
+# Keeps SHA-pinned actions current (updates the SHA and the version comment). Review like any other PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }   # never adopt a release younger than a week
