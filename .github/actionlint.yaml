@@ -1,3 +1,3 @@
 # Custom labels of our self-hosted runners (chapter 05).
 self-hosted-runner:
-  labels: [agl, agl-kvm]
+  labels: [agl-pr, agl-release, agl-kvm]

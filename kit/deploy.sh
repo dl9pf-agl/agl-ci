@@ -4,7 +4,7 @@
 #   sudo GH_TOKEN=ghp_... ./deploy.sh            # token from env
 #   sudo ./deploy.sh                             # prompts (hidden)
 # Optional env: GH_ORG (default dl9pf-agl) SLOTS (default 1) ENGINE (docker|podman, default auto)
-#               LABELS (default agl-kvm) MEM_LIMIT CPU_LIMIT 
+#               LABELS (default agl-pr) MEM_LIMIT CPU_LIMIT 
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -42,7 +42,7 @@ ENGINE=$ENGINE
 GH_ORG=$ORG
 GH_TOKEN=$GH_TOKEN
 RUNNER_GROUP_ID=1
-LABELS=${LABELS:-agl-kvm}
+LABELS=${LABELS:-agl-pr}
 MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
 DIND=${DIND:-1}
@@ -72,4 +72,4 @@ printf "RUNNER_IMAGE=%s\nDIND_IMAGE=%s\n" "$image" "$DIND_IMAGE" >> /etc/agl-run
 systemctl daemon-reload
 for i in $(seq 1 "$SLOTS"); do systemctl enable --now "agl-runner@$i.service"; done
 echo "done. status: systemctl status agl-runner@1 ; logs: journalctl -fu agl-runner@1"
-echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners (label: ${LABELS:-agl-kvm})"
+echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners (label: ${LABELS:-agl-pr})"
