@@ -7,7 +7,7 @@ with expression injection fails in `enforce`, passes in `report`). First CI run 
 | Tool | Checks | Config |
 |---|---|---|
 | actionlint | workflow syntax, expression types, runner labels, shellcheck of `run:` blocks | `.github/actionlint.yaml` (our self-hosted labels) |
-| zizmor | template injection, excessive permissions, dangerous triggers, unpinned `uses:`, credential persistence | inline `# zizmor: ignore[rule]` with reason, or `.github/zizmor.yml` |
+| zizmor | template injection, excessive permissions, dangerous triggers, unpinned `uses:`, credential persistence | inline `# zizmor: ignore[rule] reason` (e.g. `self-repository` in images.yml: actionlint 1.7.12 does not accept the new `$/` syntax) or `.github/zizmor.yml` |
 | shellcheck | `scripts/*.sh`, builder entrypoint | inline `# shellcheck disable=SCxxxx` with reason |
 | hadolint | both Dockerfiles | `.hadolint.yaml` (each ignore carries a reason) |
 

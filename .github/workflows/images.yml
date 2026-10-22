@@ -23,7 +23,7 @@ env:
 
 jobs:
   lint:
-    uses: ./.github/workflows/lint.yml
+    uses: ./.github/workflows/lint.yml  # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ syntax; revisit on actionlint bump
     permissions: { contents: read }
 
   builder:
