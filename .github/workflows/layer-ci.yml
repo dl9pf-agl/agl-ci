@@ -78,8 +78,11 @@ jobs:
           builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
           agl-ci/scripts/verify-release.sh "$builder"
           # kas clones the layers (repo under test pinned); the matrices live in them
-          python3 -m venv "$RUNNER_TEMP/kas" && "$RUNNER_TEMP/kas/bin/pip" install -q --require-hashes -r agl-ci/docker/requirements.txt
-          PATH="$RUNNER_TEMP/kas/bin:$PATH" AGL_TREE=$PWD/tree KAS_EXEC=kas CI=true agl-ci/ci/scripts/checkout.sh
+          # run kas from the verified builder image itself
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" -e HOME=/tmp \
+            -e AGL_TREE="$PWD/tree" -e KAS_EXEC=kas -e CI=true \
+            -e AGL_PIN_REPO -e AGL_PIN_URL -e AGL_PIN_SHA \
+            --entrypoint /bin/bash "$builder" agl-ci/ci/scripts/checkout.sh
           {
             echo "tier=$tier"
             echo "builder=$builder"
