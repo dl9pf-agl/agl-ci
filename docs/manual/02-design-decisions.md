@@ -56,3 +56,13 @@ Each entry: decision, reason, alternatives not taken.
 | Drop hadolint; keep actionlint, zizmor, shellcheck | Two small Dockerfiles; findings were cosmetic | Keep all four |
 | Keep DinD default, keep two independent build runners | User decision: DinD needed for kas-container flows; independence of the per-push check | DIND=0 (simpler, removes docker-cli CVEs); single-job double build |
 | Chapters merged (08->03, 12->09), Yocto experiment deferred | Fewer stubs; YAGNI | Keep 13 chapters |
+
+## Layer CI (decided 2026-10-22)
+| Decision | Reason | Alternatives considered |
+|---|---|---|
+| Reuse the existing matrix schema and scripts, adapted | Already tested, tiers exist, less new code | New `plan.py`/`images.yaml` (second schema to keep in sync) |
+| `agl-ucb` is the single source of kas config and pins; CI = agl-ucb + layers cloned into it | meta-agl has no base/machine/pins; even `bitbake -p` needs the pinned externals | Standalone layer repos (duplicated files drift); kas repo-includes across repos (more machinery) |
+| Layers cloned by `scripts/checkout-layers.sh`, base.yml stays path-only | No kas hard-reset trap, no overlay, no assert, no local-dev guard; same script on desk and any forge | `url:`+`branch:` in base.yml with a CI overlay and guards |
+| `needs:` in each repo's matrix defines the downstream chain | Declarative, local to each repo, templatable | Hard-coded repo map in the engine |
+| `KAS_EXEC` switch: `kas-container` (default, signed builder) or `kas` direct | Both execution models kept at the price of one function | Only one of them |
+| Cache permission by runner pool (agl-pr read-only, agl-release read-write) | A PR cannot poison the cache that main/release consume | Always cold; one shared read-write cache |

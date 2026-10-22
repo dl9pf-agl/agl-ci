@@ -17,6 +17,7 @@ runner kit updates the matching chapter in the same commit.
 | 10 | [Lint and security gate](10-lint-gate.md) | actionlint, zizmor, shellcheck; recovery path |
 | 11 | [Templating and portability](11-templating.md) | Adopting agl-ci elsewhere, GitLab/Forgejo path |
 | 12 | [Repository hardening](12-repo-hardening.md) | Ruleset, secret scanning, Scorecard, approvals, owner-only settings |
+| 13 | [Layer CI engine](13-layer-ci-engine.md) | Build tree, matrices, scope chain, kas execution modes |
 
 Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
 **planned**.
