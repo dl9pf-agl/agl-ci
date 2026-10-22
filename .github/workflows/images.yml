@@ -33,10 +33,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: { contents: read }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: echo "digest=$(scripts/build-image.sh builder builder.tar)" > digest.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: "builder-${{ matrix.n }}", path: "builder.tar\ndigest.txt", retention-days: 7 }
 
   builder-compare:
@@ -45,7 +45,7 @@ jobs:
     permissions: { contents: read }
     outputs: { digest: "${{ steps.cmp.outputs.digest }}" }
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { pattern: 'builder-*', path: art }
       - id: cmp
         run: |
@@ -60,12 +60,12 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: { contents: read }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: builder-a, path: art }
       - run: echo "digest=$(scripts/build-image.sh runner runner.tar art/builder.tar)" > digest.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with: { name: "runner-${{ matrix.n }}", path: "runner.tar\ndigest.txt", retention-days: 7 }
 
   runner-compare:
@@ -74,7 +74,7 @@ jobs:
     permissions: { contents: read }
     outputs: { digest: "${{ steps.cmp.outputs.digest }}" }
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { pattern: 'runner-*', path: art }
       - id: cmp
         run: |
@@ -88,11 +88,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: { contents: read }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: builder-a, path: art/builder }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: runner-a, path: art/runner }
       - name: install grype (sha256-pinned)
         run: |
@@ -109,7 +109,7 @@ jobs:
             { echo "## $img"; cat "report/$img/cve-build.md"; } >> "$GITHUB_STEP_SUMMARY"
           done
           exit $rc
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with: { name: cve-build-report, path: report, retention-days: 90 }
 
@@ -126,7 +126,7 @@ jobs:
       builder: ${{ steps.push.outputs.builder }}
       runner: ${{ steps.push.outputs.runner }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - id: tag
         env: { GH_TOKEN: "${{ github.token }}" }
@@ -141,9 +141,9 @@ jobs:
             *) t="test-${GITHUB_SHA::7}" ;;
           esac
           echo "tag=$t" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: builder-a, path: art/builder }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { name: runner-a, path: art/runner }
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with: { cosign-release: v2.6.5 }
@@ -176,7 +176,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: { contents: read, packages: read }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with: { cosign-release: v2.6.5 }
