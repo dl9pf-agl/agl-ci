@@ -38,7 +38,7 @@ run_check() {
   run_host_check "$name" kas_run shell "$kasfiles" -c "$*"
 }
 
-run_host_check "matrix-validate" python3 "$ENGINE/_matrix.py"
+run_host_check "matrix-validate" "$PY" "$ENGINE/_matrix.py"
 
 run_check "bitbake-parse" "$KASFILES" "bitbake -p"
 
@@ -60,10 +60,10 @@ run_check "bitbake-parse" "$KASFILES" "bitbake -p"
 # dependency info there, not here.
 CHECK_LAYERS="${CHECK_LAYERS:-meta-agl/meta-agl-core}"
 if [ "$CHECK_LAYERS" = "all" ]; then
-  CHECK_LAYERS="$(python3 "$ENGINE/_matrix.py" --list-check-layers | tr '\n' ' ')"
+  CHECK_LAYERS="$("$PY" "$ENGINE/_matrix.py" --list-check-layers | tr '\n' ' ')"
 fi
 # shellcheck disable=SC2086
-CHECK_LAYER_ARGS="$(python3 "$ENGINE/_matrix.py" --check-layer-args $CHECK_LAYERS)"
+CHECK_LAYER_ARGS="$("$PY" "$ENGINE/_matrix.py" --check-layer-args $CHECK_LAYERS)"
 CHECK_LAYER_PATHS=""
 for l in $CHECK_LAYERS; do
   CHECK_LAYER_PATHS="$CHECK_LAYER_PATHS $AGL_WORKDIR/$l"
@@ -85,7 +85,7 @@ fi
 # PATH once bitbake's build environment is sourced (only /usr/{,s}bin and /{,s}bin survive)
 # - call oelint-adv by absolute path rather than relying on PATH resolution.
 LINT_PATHS=""
-for r in $(python3 "$ENGINE/_matrix.py" --repos); do LINT_PATHS="$LINT_PATHS $AGL_WORKDIR/$r"; done
+for r in $("$PY" "$ENGINE/_matrix.py" --repos); do LINT_PATHS="$LINT_PATHS $AGL_WORKDIR/$r"; done
 run_check "recipe-lint" "$KASFILES" "/usr/local/bin/oelint-adv$LINT_PATHS"
 
 exit $status
