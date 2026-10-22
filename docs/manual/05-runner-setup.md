@@ -33,6 +33,12 @@ runner image and `/dev/kvm` goes straight to the container.
 Bump pins (chapter 03), merge, wait for publish+verify, put the new digest into `kit/runner.digest`, re-run
 `deploy.sh` on the host (it restarts nothing by itself: `systemctl restart agl-runner@N` between jobs).
 
+One command: `kit/update.sh [token-file]` does `git pull --ff-only`, `deploy.sh` with `SLOTS=2` and restarts both
+slots. Why `deploy.sh` copies `run-loop.sh` and the unit to `/opt` and `/etc/systemd`: systemd runs it as root, so
+it must not come from a checkout that a `git pull`, a branch switch or a non-root user can change. The copy is a
+root-owned snapshot of a reviewed commit; the cost is one `install` line. Alternative (rejected): `ExecStart`
+straight from the checkout, which makes every `git pull` an instant root-code change.
+
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.
