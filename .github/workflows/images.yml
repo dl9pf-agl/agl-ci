@@ -3,7 +3,7 @@ name: images
 # PRs: build twice + compare only (no push, no signing, no id-token).
 on:
   pull_request:
-    paths: [docker/**, policy/**, .hadolint.yaml, scripts/build-image.sh, scripts/cve-scan.sh, .github/workflows/images.yml]
+    paths: [docker/**, policy/**, scripts/**, .github/workflows/images.yml]
   push:
     branches: [main]
     tags: ['v*']
@@ -121,10 +121,10 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write       # keyless cosign / attestations
-      attestations: write
+      id-token: write       # keyless cosign
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      builder: ${{ steps.push.outputs.builder }}
+      runner: ${{ steps.push.outputs.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { persist-credentials: false }
@@ -133,10 +133,9 @@ jobs:
         run: |
           case "$GITHUB_REF" in
             refs/tags/v*) t="${GITHUB_REF#refs/tags/v}"
-              ok=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/${GITHUB_REF#refs/tags/}" --jq .object.type)
-              [ "$ok" = tag ] || { echo "::error::release tag must be annotated+signed"; exit 1; }
-              sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/${GITHUB_REF#refs/tags/}" --jq .object.sha)
-              [ "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .verification.verified)" = true ] \
+              ref="repos/$GITHUB_REPOSITORY/git/ref/tags/${GITHUB_REF#refs/tags/}"
+              [ "$(gh api "$ref" --jq .object.type)" = tag ] || { echo "::error::release tag must be annotated+signed"; exit 1; }
+              [ "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(gh api "$ref" --jq .object.sha)" --jq .verification.verified)" = true ] \
                 || { echo "::error::release tag signature not verified by GitHub"; exit 1; } ;;
             refs/heads/main) t=edge ;;
             *) t="test-${GITHUB_SHA::7}" ;;
@@ -148,65 +147,44 @@ jobs:
         with: { name: runner-a, path: art/runner }
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with: { cosign-release: v2.6.5 }
-      - name: push, sign, attest
+      - run: scripts/install-sign-tools.sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - id: push
+        name: push, sign, attest
         env:
-          GH_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.tag }}
           EXPECT_builder: ${{ needs.builder-compare.outputs.digest }}
           EXPECT_runner: ${{ needs.runner-compare.outputs.digest }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.workflow_ref }}
+          SOURCE_URI: ${{ github.server_url }}/${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           for img in builder runner; do
-            ref="$REGISTRY/$NAMESPACE/$img"; exp="EXPECT_$img"
-            skopeo copy --preserve-digests --dest-creds "$GITHUB_ACTOR:$GH_TOKEN" \
-              "oci-archive:art/$img/$img.tar" "docker://$ref:$TAG"
-            d=$(skopeo inspect --raw --creds "$GITHUB_ACTOR:$GH_TOKEN" "docker://$ref:$TAG" | sha256sum | cut -d' ' -f1)
-            [ "sha256:$d" = "${!exp}" ] || { echo "::error::pushed digest sha256:$d != built ${!exp}"; exit 1; }
-            echo "$img ${!exp}" >> digests.txt
+            exp="EXPECT_$img"
+            ref="$(scripts/publish-image.sh "$img" "art/$img/$img.tar" "$TAG" "${!exp}")"
+            scripts/sign-image.sh "$ref" "art/$img/$img.tar"
+            echo "$img=$ref" >> "$GITHUB_OUTPUT"
           done
-          cat digests.txt
-      - name: SBOM (builder)
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with: { image: "oci-archive:art/builder/builder.tar", format: spdx-json, output-file: sbom-builder.json, upload-artifact: false, upload-release-assets: false }
-      - name: SBOM (runner)
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with: { image: "oci-archive:art/runner/runner.tar", format: spdx-json, output-file: sbom-runner.json, upload-artifact: false, upload-release-assets: false }
-      - name: cosign sign + SBOM attest (keyless)
-        env: { COSIGN_YES: "true" }
-        run: |
-          echo "${{ github.token }}" | cosign login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
-          while read -r img d; do
-            ref="$REGISTRY/$NAMESPACE/$img@$d"
-            cosign sign "$ref"
-            cosign attest --type spdxjson --predicate "sbom-$img.json" "$ref"
-          done < digests.txt
-          awk '{print "DIGEST_"$1"="$2}' digests.txt >> "$GITHUB_ENV"
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
-        with: { subject-name: "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/builder", subject-digest: "${{ env.DIGEST_builder }}", push-to-registry: true }
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
-        with: { subject-name: "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/runner", subject-digest: "${{ env.DIGEST_runner }}", push-to-registry: true }
 
   verify:
     name: verify (fresh runner)
-    needs: [publish, builder-compare, runner-compare]
+    needs: publish
     runs-on: ubuntu-24.04
-    permissions: { contents: read, packages: read, attestations: read }
+    permissions: { contents: read, packages: read }
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with: { cosign-release: v2.6.5 }
       - name: verify signature, SBOM, provenance
         env:
-          GH_TOKEN: ${{ github.token }}
-          B: ${{ needs.builder-compare.outputs.digest }}
-          R: ${{ needs.runner-compare.outputs.digest }}
+          TOKEN: ${{ github.token }}
+          BUILDER: ${{ needs.publish.outputs.builder }}
+          RUNNER: ${{ needs.publish.outputs.runner }}
         run: |
-          set -euo pipefail
-          echo "$GH_TOKEN" | cosign login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
-          id="https://github.com/$GITHUB_REPOSITORY/.github/workflows/images.yml@$GITHUB_REF"
-          for p in "builder $B" "runner $R"; do
-            read -r name dig <<< "$p"; ref="$REGISTRY/$NAMESPACE/$name@$dig"
-            cosign verify --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
-            cosign verify-attestation --type spdxjson --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
-            gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY"
-            echo "OK $name $dig"
-          done
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for ref in "$BUILDER" "$RUNNER"; do scripts/verify-release.sh "$ref"; done
