@@ -1,4 +1,4 @@
-# 11 Lint and security gate
+# 10 Lint and security gate
 
 Status: **implemented**, local runs verified (clean tree passes; a deliberately bad `pull_request_target` workflow
 with expression injection fails in `enforce`, passes in `report`). First CI run is the PR test run.
@@ -9,10 +9,10 @@ with expression injection fails in `enforce`, passes in `report`). First CI run 
 | actionlint | workflow syntax, expression types, runner labels, shellcheck of `run:` blocks | `.github/actionlint.yaml` (our self-hosted labels) |
 | zizmor | template injection, excessive permissions, dangerous triggers, unpinned `uses:`, credential persistence | inline `# zizmor: ignore[rule] reason` (e.g. `self-repository` in images.yml: actionlint 1.7.12 does not accept the new `$/` syntax) or `.github/zizmor.yml` |
 | shellcheck | `scripts/*.sh`, builder entrypoint | inline `# shellcheck disable=SCxxxx` with reason |
-| hadolint | both Dockerfiles | `.hadolint.yaml` (each ignore carries a reason) |
+
 
 Tools are installed by `scripts/install-lint-tools.sh` from pinned releases with sha256 (`docker/pins.env`);
-no third-party actions. actionlint/hadolint hashes match upstream checksum files; zizmor/shellcheck publish none,
+no third-party actions. actionlint hash matches the upstream checksum file; zizmor/shellcheck publish none,
 so their hashes are trust-on-first-download. `GH_TOKEN` (read-only) enables zizmor's online audits.
 
 ## Gate wiring

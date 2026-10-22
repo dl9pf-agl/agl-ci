@@ -1,6 +1,6 @@
-# 13 Templating and portability
+# 11 Templating and portability
 
-Status: requirement and target structure **decided**; refactor partly done (`policy/project.env`), rest **planned**.
+Status: requirement and target structure **decided**; refactor mostly done (`policy/project.env`, `scripts/publish-image.sh`, `scripts/sign-image.sh`, `scripts/verify-release.sh`); remaining items below.
 
 ## Requirement
 Members must be able to adopt this pipeline for their own repos, and later on GitLab or Forgejo. Therefore
@@ -33,11 +33,10 @@ workflow YAML. Names of the repo/registry come from `policy/project.env` or the 
 To keep these swappable: signing, attesting and verifying are called from scripts with the identity and issuer
 as parameters; the verify policy (`verify-release.sh`) already takes repo from `policy/project.env`. Remaining
 GitHub-only literals to remove: the OIDC issuer URL and workflow-path regexp in `verify-release.sh`,
-`skopeo`/`cosign` blocks inside `images.yml` (move to `scripts/publish-image.sh`), image names in `images.yml`
-(drive from `IMAGES`).
+image names in `images.yml` (drive from `IMAGES`). The push/sign blocks already live in scripts.
 
 ## Planned refactor (in order)
-1. `scripts/publish-image.sh`, `scripts/sign-image.sh` (push, sign, attest) called from the workflow.
+1. (done) `scripts/publish-image.sh`, `scripts/sign-image.sh` called from the workflow.
 2. `images.yml` matrix generated from `IMAGES` in `policy/project.env` (needs ordered builds: builder before runner).
 3. Issuer/identity regexp into `policy/project.env`.
-4. Mark as template repository; add `docs/manual/14-adopter-checklist.md` from the steps above.
+4. Mark as template repository; add `docs/manual/12-adopter-checklist.md` from the steps above.

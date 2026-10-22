@@ -11,6 +11,4 @@ get "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/z
 tar -xzf "$t/zz.tgz" -C "$bin" zizmor
 get "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" sc.txz "$SHELLCHECK_SHA256"
 tar -xJf "$t/sc.txz" -C "$t" && install -m 0755 "$t/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" "$bin/shellcheck"
-get "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" hl "$HADOLINT_SHA256"
-install -m 0755 "$t/hl" "$bin/hadolint"
-echo "installed to $bin: actionlint zizmor shellcheck hadolint"
+echo "installed to $bin: actionlint zizmor shellcheck"

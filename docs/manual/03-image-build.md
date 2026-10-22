@@ -14,6 +14,10 @@ cosign release; Python packages are hash-locked (`pip install --require-hashes`)
 - Cleanup of logs, caches, `ldconfig` aux-cache, dpkg/debconf backups; fixed shadow `lastchg`.
 - BuildKit provenance/SBOM attestations disabled in the build; added afterwards as cosign/GitHub attestations.
 
+## Scripts
+`scripts/build-image.sh` (build to OCI archive, print digest), `scripts/publish-image.sh` (push + digest check),
+`scripts/sign-image.sh` (sign + SBOM + provenance). The workflow only calls them.
+
 ## Reproduce a published digest locally
 ```
 git clone https://github.com/dl9pf-agl/agl-ci && cd agl-ci && git checkout <commit>
@@ -31,3 +35,14 @@ Compare with `cosign verify` output or `skopeo inspect --raw docker://ghcr.io/dl
 ## Known risks
 - A package withdrawn from the snapshot, or non-deterministic package postinstall output, breaks the
   blocking compare. Fix: diff the two OCI layouts (`diffoci` or `skopeo`/`tar`), remove the source of variation.
+
+## Maintenance
+
+### Bump pins
+Edit `docker/pins.env` / regenerate `docker/requirements.txt` (`pip-compile --generate-hashes`), open a PR.
+CI builds twice and compares; merge only if green. Weekly schedule re-runs the build as a reproducibility
+canary (same commit, same digest expected).
+
+### Incidents
+Compromised action/dependency: revert pin, rebuild, re-sign, advisory. Broken reproducibility: download both
+artifacts of the failed run, diff layers (see chapter 03).
