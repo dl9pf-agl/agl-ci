@@ -1,7 +1,6 @@
 # 05 Runner setup (Debian 13 host)
 
-Status: kit moved to `kit/`, now pulls and verifies the signed runner image. **Untested end to end**: the runner
-image is not published yet (PR #1 not merged), so `kit/runner.digest` is empty. Docker-in-Docker was validated
+Status: kit moved to `kit/`, pulls and verifies the signed runner image; `kit/runner.digest` pinned to the first verified publish (main run 39761708441). **Untested on the server.** Docker-in-Docker was validated
 earlier on a dev host with a locally built image.
 
 ## What the kit does
