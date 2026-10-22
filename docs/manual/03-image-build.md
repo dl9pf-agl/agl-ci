@@ -16,7 +16,9 @@ cosign release; Python packages are hash-locked (`pip install --require-hashes`)
 
 ## Scripts
 `scripts/build-image.sh` (build to OCI archive, print digest), `scripts/publish-image.sh` (push + digest check),
-`scripts/sign-image.sh` (sign + SBOM + provenance). The workflow only calls them.
+`scripts/sign-image.sh` (sign + SBOM + provenance), `scripts/smoke-image.sh` (start the built image the way consumers
+do: builder through its ENTRYPOINT as root and uid 1000, tools in both images; `publish` needs the `smoke` job).
+The workflow only calls them.
 
 ## Reproduce a published digest locally
 ```
@@ -44,5 +46,8 @@ CI builds twice and compares; merge only if green. Weekly schedule re-runs the b
 canary (same commit, same digest expected).
 
 ### Incidents
+2026-10-22: builder published with `/entrypoint.sh` mode 0644 (`COPY` overwrote the 0755 placeholder); `kas-container`
+failed with `exec /entrypoint.sh failed: Permission denied` on the runner. Reproducible and signed, but never started.
+Added the `smoke` job; `COPY --chmod=0755`.
 Compromised action/dependency: revert pin, rebuild, re-sign, advisory. Broken reproducibility: download both
 artifacts of the failed run, diff layers (see chapter 03).

@@ -40,9 +40,8 @@ RUN python3 -m venv /opt/kas \
  && ln -s /opt/kas/bin/kas /opt/kas/bin/kas-container /opt/kas/bin/oelint-adv /usr/local/bin/ \
  && rm /tmp/requirements.txt
 
-RUN useradd --create-home --uid 1000 --shell /bin/bash ci \
- && install -m 0755 /dev/null /entrypoint.sh
-COPY docker/builder/entrypoint.sh /entrypoint.sh
+RUN useradd --create-home --uid 1000 --shell /bin/bash ci
+COPY --chmod=0755 docker/builder/entrypoint.sh /entrypoint.sh
 
 # Pin shadow lastchg (useradd would record the build day).
 RUN sed -i -E 's/^(ci:[^:]*:)[0-9]*:/\119000:/' /etc/shadow /etc/shadow-
