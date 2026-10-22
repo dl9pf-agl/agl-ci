@@ -1,0 +1,212 @@
+name: images
+# Build, reproduce, publish, sign and verify the agl-ci builder + runner images.
+# PRs: build twice + compare only (no push, no signing, no id-token).
+on:
+  pull_request:
+    paths: [docker/**, policy/**, .hadolint.yaml, scripts/build-image.sh, scripts/cve-scan.sh, .github/workflows/images.yml]
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    - cron: '17 3 * * 1'   # weekly reproducibility canary
+  workflow_dispatch:
+    inputs:
+      build_fail_on:
+        description: 'Override policy/cve.env BUILD_FAIL_ON (none|low|medium|high|critical)'
+        required: false
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io
+  NAMESPACE: ${{ github.repository }}   # ghcr.io/<owner>/<repo>/{builder,runner}
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint.yml  # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ syntax; revisit on actionlint bump
+    permissions: { contents: read }
+
+  builder:
+    needs: lint
+    name: builder (${{ matrix.n }})
+    strategy: { fail-fast: false, matrix: { n: [a, b] } }
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - run: echo "digest=$(scripts/build-image.sh builder builder.tar)" > digest.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: "builder-${{ matrix.n }}", path: "builder.tar\ndigest.txt", retention-days: 7 }
+
+  builder-compare:
+    needs: builder
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    outputs: { digest: "${{ steps.cmp.outputs.digest }}" }
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { pattern: 'builder-*', path: art }
+      - id: cmp
+        run: |
+          a=$(sed 's/^digest=//' art/builder-a/digest.txt); b=$(sed 's/^digest=//' art/builder-b/digest.txt)
+          echo "a=$a b=$b"; [ "$a" = "$b" ] || { echo "::error::builder is not reproducible"; exit 1; }
+          echo "digest=$a" >> "$GITHUB_OUTPUT"
+
+  runner:
+    name: runner (${{ matrix.n }})
+    needs: builder-compare
+    strategy: { fail-fast: false, matrix: { n: [a, b] } }
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: builder-a, path: art }
+      - run: echo "digest=$(scripts/build-image.sh runner runner.tar art/builder.tar)" > digest.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: "runner-${{ matrix.n }}", path: "runner.tar\ndigest.txt", retention-days: 7 }
+
+  runner-compare:
+    needs: runner
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    outputs: { digest: "${{ steps.cmp.outputs.digest }}" }
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { pattern: 'runner-*', path: art }
+      - id: cmp
+        run: |
+          a=$(sed 's/^digest=//' art/runner-a/digest.txt); b=$(sed 's/^digest=//' art/runner-b/digest.txt)
+          echo "a=$a b=$b"; [ "$a" = "$b" ] || { echo "::error::runner is not reproducible"; exit 1; }
+          echo "digest=$a" >> "$GITHUB_OUTPUT"
+
+  scan:
+    name: cve scan (build bar)
+    needs: [builder-compare, runner-compare]
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: builder-a, path: art/builder }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: runner-a, path: art/runner }
+      - name: install grype (sha256-pinned)
+        run: |
+          . docker/pins.env
+          curl -fsSL -o g.tgz "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          echo "${GRYPE_SHA256}  g.tgz" | sha256sum -c -
+          sudo tar -xzf g.tgz -C /usr/local/bin grype
+      - name: scan (report always, fail only at the bar)
+        env: { FAIL_ON: "${{ inputs.build_fail_on }}" }
+        run: |
+          rc=0
+          for img in builder runner; do
+            scripts/cve-scan.sh "oci-archive:art/$img/$img.tar" build "report/$img" || rc=1
+            { echo "## $img"; cat "report/$img/cve-build.md"; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $rc
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with: { name: cve-build-report, path: report, retention-days: 90 }
+
+  publish:
+    name: publish + sign
+    if: github.event_name != 'pull_request'
+    needs: [builder-compare, runner-compare, scan]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write       # keyless cosign / attestations
+      attestations: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: { persist-credentials: false }
+      - id: tag
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) t="${GITHUB_REF#refs/tags/v}"
+              ok=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/${GITHUB_REF#refs/tags/}" --jq .object.type)
+              [ "$ok" = tag ] || { echo "::error::release tag must be annotated+signed"; exit 1; }
+              sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/${GITHUB_REF#refs/tags/}" --jq .object.sha)
+              [ "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .verification.verified)" = true ] \
+                || { echo "::error::release tag signature not verified by GitHub"; exit 1; } ;;
+            refs/heads/main) t=edge ;;
+            *) t="test-${GITHUB_SHA::7}" ;;
+          esac
+          echo "tag=$t" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: builder-a, path: art/builder }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { name: runner-a, path: art/runner }
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with: { cosign-release: v2.6.5 }
+      - name: push, sign, attest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          EXPECT_builder: ${{ needs.builder-compare.outputs.digest }}
+          EXPECT_runner: ${{ needs.runner-compare.outputs.digest }}
+        run: |
+          set -euo pipefail
+          for img in builder runner; do
+            ref="$REGISTRY/$NAMESPACE/$img"; exp="EXPECT_$img"
+            skopeo copy --preserve-digests --dest-creds "$GITHUB_ACTOR:$GH_TOKEN" \
+              "oci-archive:art/$img/$img.tar" "docker://$ref:$TAG"
+            d=$(skopeo inspect --raw --creds "$GITHUB_ACTOR:$GH_TOKEN" "docker://$ref:$TAG" | sha256sum | cut -d' ' -f1)
+            [ "sha256:$d" = "${!exp}" ] || { echo "::error::pushed digest sha256:$d != built ${!exp}"; exit 1; }
+            echo "$img ${!exp}" >> digests.txt
+          done
+          cat digests.txt
+      - name: SBOM (builder)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with: { image: "oci-archive:art/builder/builder.tar", format: spdx-json, output-file: sbom-builder.json, upload-artifact: false, upload-release-assets: false }
+      - name: SBOM (runner)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with: { image: "oci-archive:art/runner/runner.tar", format: spdx-json, output-file: sbom-runner.json, upload-artifact: false, upload-release-assets: false }
+      - name: cosign sign + SBOM attest (keyless)
+        env: { COSIGN_YES: "true" }
+        run: |
+          echo "${{ github.token }}" | cosign login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+          while read -r img d; do
+            ref="$REGISTRY/$NAMESPACE/$img@$d"
+            cosign sign "$ref"
+            cosign attest --type spdxjson --predicate "sbom-$img.json" "$ref"
+          done < digests.txt
+          awk '{print "DIGEST_"$1"="$2}' digests.txt >> "$GITHUB_ENV"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with: { subject-name: "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/builder", subject-digest: "${{ env.DIGEST_builder }}", push-to-registry: true }
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with: { subject-name: "${{ env.REGISTRY }}/${{ env.NAMESPACE }}/runner", subject-digest: "${{ env.DIGEST_runner }}", push-to-registry: true }
+
+  verify:
+    name: verify (fresh runner)
+    needs: [publish, builder-compare, runner-compare]
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, packages: read, attestations: read }
+    steps:
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with: { cosign-release: v2.6.5 }
+      - name: verify signature, SBOM, provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          B: ${{ needs.builder-compare.outputs.digest }}
+          R: ${{ needs.runner-compare.outputs.digest }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | cosign login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+          id="https://github.com/$GITHUB_REPOSITORY/.github/workflows/images.yml@$GITHUB_REF"
+          for p in "builder $B" "runner $R"; do
+            read -r name dig <<< "$p"; ref="$REGISTRY/$NAMESPACE/$name@$dig"
+            cosign verify --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
+            cosign verify-attestation --type spdxjson --certificate-identity "$id" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$ref" >/dev/null
+            gh attestation verify "oci://$ref" --repo "$GITHUB_REPOSITORY"
+            echo "OK $name $dig"
+          done
