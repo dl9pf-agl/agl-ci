@@ -38,7 +38,7 @@ from pathlib import Path
 
 import yaml
 
-# Build tree = the agl-ucb checkout with the layer repos cloned inside (scripts/checkout-layers.sh).
+# Build tree = the agl-ucb checkout with the layer repos cloned inside (scripts/kas, base.yml url/branch).
 # Every layer repo that has ci/build-matrix.yaml contributes its own images. AGL_SCOPE=<repo> limits
 # the run to that repo plus every repo that (transitively) lists it under `needs:` - the downstream chain.
 TREE = Path(os.environ.get("AGL_TREE", ".")).resolve()
@@ -175,6 +175,10 @@ def main():
              "entirely if none apply",
     )
     ap.add_argument(
+        "--json", metavar="TIER",
+        help="print {\"include\": [...]} with the expanded entries of TIER, for a GitHub Actions matrix",
+    )
+    ap.add_argument(
         "--repos", action="store_true",
         help="print the repos in scope (those whose images are in the merged matrix), one per line",
     )
@@ -185,6 +189,12 @@ def main():
              "callers (e.g. scripts/aglsetup.sh) that don't go through a matrix match at all",
     )
     args = ap.parse_args()
+
+    if args.json:
+        import json
+        rows = [dict(e, features=",".join(e["features"])) for e in expand_entries() if args.json in e["tiers"]]
+        print(json.dumps({"include": rows}))
+        return
 
     if args.repos:
         print("\n".join(sorted({i["repo"] for i in load_matrix()["images"]})))

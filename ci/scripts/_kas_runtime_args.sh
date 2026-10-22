@@ -45,6 +45,8 @@
 # ENGINE = this directory (agl-ci/ci/scripts); TREE = the build tree (agl-ucb checkout + layers), AGL_TREE or cwd.
 ENGINE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TREE="$(cd "${AGL_TREE:-$PWD}" && pwd)"; export AGL_TREE="$TREE"
+# Python with PyYAML: the kas venv of the builder/runner image, else the system python3.
+PY=python3; [ ! -x /opt/kas/bin/python ] || PY=/opt/kas/bin/python
 # CI-only kas fragments ship with the engine; kas needs them inside the work dir.
 mkdir -p "$TREE/build/ci-kas" && cp "$ENGINE/../kas/"*.yml "$TREE/build/ci-kas/"
 
@@ -88,7 +90,7 @@ parse_common_args() {
 # `set -e`, which process substitution's exit status would not.
 matrix_fields() {
   local _raw
-  _raw="$(python3 "$ENGINE/_compose_kasfiles.py" --machine "$MACHINE" --features "$FEATURES" --target "$MATRIX_TARGET" --extra-features "$EXTRA_FEATURES" --fields "$1")"
+  _raw="$("$PY" "$ENGINE/_compose_kasfiles.py" --machine "$MACHINE" --features "$FEATURES" --target "$MATRIX_TARGET" --extra-features "$EXTRA_FEATURES" --fields "$1")"
   mapfile -t _MATRIX_FIELDS <<< "$_raw"
 }
 
@@ -100,7 +102,7 @@ matrix_fields() {
 # whether the caller is matrix-backed or matrix-free.
 run_machine_setup_hooks() {
   local machine="$1" eula
-  eula="$(python3 "$ENGINE/_matrix.py" --machine-eula "$machine")"
+  eula="$("$PY" "$ENGINE/_matrix.py" --machine-eula "$machine")"
 
   # EULA (decision: CI auto-accepts, local dev keeps the interactive prompt unless it
   # already set the env var itself).
@@ -151,6 +153,24 @@ kas_ci_includes() {
   if [ "${CI:-}" = "true" ]; then
     printf ':build/ci-kas/ci-only.yml'
   fi
+  if [ -n "${AGL_PIN_REPO:-}" ]; then
+    printf ':%s' "$(kas_pin_fragment)"
+  fi
+}
+
+# Repo under test: AGL_PIN_REPO (e.g. meta-agl) at AGL_PIN_SHA from AGL_PIN_URL (fork PRs: the fork).
+# Written next to ci-only.yml, appended last so it overrides agl-ucb's branch with the exact commit.
+kas_pin_fragment() {
+  cat > "$TREE/build/ci-kas/layer-pin.yml" <<YAML
+header:
+  version: 22
+repos:
+  $AGL_PIN_REPO:
+    url: $AGL_PIN_URL
+    branch:
+    commit: $AGL_PIN_SHA
+YAML
+  printf 'build/ci-kas/layer-pin.yml'
 }
 
 kas_runtime_args() {

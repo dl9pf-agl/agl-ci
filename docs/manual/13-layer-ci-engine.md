@@ -9,9 +9,13 @@ new planner: its matrix schema, tiers and checks were already in use. GitLab fil
 imported yet (they still call `make`); the matrix and scripts are forge-independent, so only a thin adapter is missing.
 
 ## Layout
-- **Build tree** = a checkout of `agl-ucb` (kas fragments, `kas/pins.yml`) with `meta-agl`, `meta-agl-demo`,
-  `meta-agl-devel` cloned inside by `agl-ucb/scripts/checkout-layers.sh`. `agl-ucb` stays the single source of kas
-  configuration and pins; layer repos do not carry base/machine/pins files.
+- **Build tree** = a checkout of `agl-ucb` (kas fragments, `kas/pins.yml`). kas clones `meta-agl`, `meta-agl-demo`
+  and `meta-agl-devel` into it (`url:`/`branch:` in `agl-ucb/kas/base.yml`), exactly as on a developer desk. `agl-ucb`
+  stays the single source of kas configuration and pins; layer repos do not carry base/machine/pins files.
+- **Repo under test** = env `AGL_PIN_REPO`, `AGL_PIN_URL` (fork URL for fork PRs), `AGL_PIN_SHA`. The engine writes
+  `<tree>/build/ci-kas/layer-pin.yml` (`url`, `commit`, `branch:` cleared) and appends it last to the kas chain, so kas
+  builds exactly that commit and nothing is reset to a branch tip. The `matrix` job first runs `ci/scripts/checkout.sh`
+  (`kas checkout` of `base.yml` + the pin) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
 - **Engine** = `agl-ci/ci/scripts` (+ `ci/kas/*.yml`, staged into `<tree>/build/ci-kas/` at run time because kas needs
   them inside the work dir).
 - `AGL_TREE` selects the tree (default: current directory).
@@ -30,11 +34,14 @@ image, which contains kas and the Yocto host tools). Everything goes through `ka
 
 ## Running on a desk
 ```
-git clone https://github.com/dl9pf-agl/agl-ucb && cd agl-ucb && scripts/checkout-layers.sh
+git clone https://github.com/dl9pf-agl/agl-ucb && cd agl-ucb
+scripts/# the first engine run clones the layers via kas; for local edits see agl-ucb README (--dev)
 git clone https://github.com/dl9pf-agl/agl-ci ../agl-ci
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/validate.sh --machine qemux86-64 --target agl-image-minimal
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/build.sh    --machine qemux86-64 --target agl-image-minimal
 ```
+To test local layer changes use the opt-in dev mode of agl-ucb (`kas/local/dev.yml`, `scripts/aglsetup.sh --dev`): kas then
+never resets the layer clones. To build a specific commit set `AGL_PIN_REPO/URL/SHA` as above.
 `CI=true` adds `ci-only.yml` (passwordless login for HIL tests, buildhistory, CI tuning). Cache: `AGL_SSTATE_DIR`,
 `AGL_DL_DIR` (existing fragments in `agl-ucb/kas/local`); the shared-cache policy for the runner is decided in the next steps.
 

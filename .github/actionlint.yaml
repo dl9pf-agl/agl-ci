@@ -1,3 +1,9 @@
 # Custom labels of our self-hosted runners (chapter 05).
 self-hosted-runner:
   labels: [agl-pr, agl-release, agl-kvm]
+# job.workflow_sha / job.workflow_repository are documented (GitHub Contexts: job) but unknown to actionlint 1.7.12.
+# Revisit when actionlint is bumped; the first real run of layer-ci proves they exist.
+paths:
+  .github/workflows/layer-ci.yml:
+    ignore:
+      - 'property "workflow_(sha|repository)" is not defined in object type'
