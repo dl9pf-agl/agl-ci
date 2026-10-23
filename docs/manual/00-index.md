@@ -18,6 +18,7 @@ runner kit updates the matching chapter in the same commit.
 | 11 | [Templating and portability](11-templating.md) | Adopting agl-ci elsewhere, GitLab/Forgejo path |
 | 12 | [Repository hardening](12-repo-hardening.md) | Ruleset, secret scanning, Scorecard, approvals, owner-only settings |
 | 13 | [Layer CI engine](13-layer-ci-engine.md) | Build tree, matrices, scope chain, kas execution modes |
+| 14 | [Hash equivalence and PR servers](14-hashserv-and-prserv.md) | Which server where, read-only vs read-write, when a PR service is needed |
 
 Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
 **planned**.
