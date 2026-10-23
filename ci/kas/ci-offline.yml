@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MIT
+header:
+  version: 23
+
+# Outage drill (ci/scripts/drill.sh): bitbake may not touch the network. Anything that is not in DL_DIR, a
+# PREMIRROR or the local git mirrors fails with "Network access disabled ...". Add BB_FETCH_PREMIRRORONLY = "1"
+# to also ignore the upstream URL of every recipe and test the mirrors alone.
+local_conf_header:
+  ci-offline: |
+    BB_NO_NETWORK = "1"

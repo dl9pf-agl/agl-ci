@@ -20,6 +20,10 @@ on:
         description: 'kas-container (signed builder image) | kas (inside the runner image)'
         type: string
         default: kas-container
+      mode:
+        description: 'build (validate + build) | drill (outage drill: bitbake fetchall with the network off, chapter 15)'
+        type: string
+        default: build
 
 permissions: {}
 
@@ -41,6 +45,7 @@ jobs:
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
       tier: ${{ steps.gen.outputs.tier }}
+      mode: ${{ steps.gen.outputs.mode }}
       builder: ${{ steps.gen.outputs.builder }}
       count: ${{ steps.gen.outputs.count }}
     steps:
@@ -62,6 +67,7 @@ jobs:
         env:
           REPO: ${{ inputs.repo }}
           TIER_IN: ${{ inputs.tier }}
+          MODE_IN: ${{ inputs.mode }}
           EVENT: ${{ github.event_name }}
           DISPATCH_TIER: ${{ github.event.inputs.tier }}
         run: |
@@ -77,6 +83,9 @@ jobs:
           fi
           # A pull request can edit its own caller file and pass any tier: it always builds push-pr
           [ "$EVENT" != pull_request ] || tier=push-pr
+          # same for the mode: a pull request must not swap validate + build for a drill and still get a green result
+          mode="$MODE_IN"; [ "$EVENT" != pull_request ] || mode=build
+          case "$mode" in build|drill) ;; *) echo "mode must be build or drill" >&2; exit 1 ;; esac
           builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
           agl-ci/scripts/verify-release.sh "$builder"
           # kas clones the layers (repo under test pinned); the matrices live in them
@@ -87,6 +96,7 @@ jobs:
             --entrypoint /bin/bash "$builder" agl-ci/ci/scripts/checkout.sh
           {
             echo "tier=$tier"
+            echo "mode=$mode"
             echo "builder=$builder"
             json="$(AGL_TREE=$PWD/tree AGL_SCOPE=$REPO python3 agl-ci/ci/scripts/_matrix.py --json "$tier")"
             echo "matrix=$json"
@@ -135,13 +145,22 @@ jobs:
           persist-credentials: false
       - name: layers
         run: agl-ci/ci/scripts/checkout.sh
+      - name: drill
+        if: needs.matrix.outputs.mode == 'drill'
+        env:
+          MACHINE: ${{ matrix.machine }}
+          FEATURES: ${{ matrix.features }}
+          TARGET: ${{ matrix.target }}
+        run: agl-ci/ci/scripts/drill.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
       - name: validate
+        if: needs.matrix.outputs.mode == 'build'
         env:
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}
         run: agl-ci/ci/scripts/validate.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
       - name: build
+        if: needs.matrix.outputs.mode == 'build'
         env:
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
@@ -155,6 +174,7 @@ jobs:
           path: |
             tree/build/artifacts/**
             tree/build/validate-results/**
+            tree/build/drill-results/**
           retention-days: ${{ needs.matrix.outputs.tier == 'push-pr' && 7 || needs.matrix.outputs.tier == 'nightly' && 30 || 90 }}
 
   # The only required status check of a caller repo.
