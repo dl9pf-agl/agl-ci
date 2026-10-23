@@ -5,8 +5,10 @@
 set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
-. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS MEM_LIMIT CPU_LIMIT DIND
+. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS MEM_LIMIT CPU_LIMIT DIND CACHE_DIR
 E="$ENGINE"; WS=/home/runner/actions-runner/_work   # same path in runner + sidecar (nested bind mounts)
+# Shared sstate + downloads (trial: every slot reads and writes). Same path in host, sidecar and runner.
+cache=(); [ -z "${CACHE_DIR:-}" ] || cache=(-v "$CACHE_DIR:$CACHE_DIR")
 dev=(); [ -c /dev/kvm ] && dev=(--device /dev/kvm) || echo "warn: no /dev/kvm" >&2
 
 cleanup() { "$E" rm -f "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
@@ -22,7 +24,7 @@ prepare() {
   "$E" volume create "agl-w$slot" >/dev/null &&
   "$E" run --rm -v "agl-w$slot:/w" --user 0 --entrypoint chown "$RUNNER_IMAGE" 1001:1001 /w &&
   "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${dev[@]}" \
-      -e DOCKER_TLS_CERTDIR= -v "agl-w$slot:$WS" "$DIND_IMAGE" >/dev/null || return 1
+      -e DOCKER_TLS_CERTDIR= -v "agl-w$slot:$WS" "${cache[@]}" "$DIND_IMAGE" >/dev/null || return 1
   for _ in $(seq 1 90); do   # sidecar needs up to ~70 s before it listens
     "$E" run --rm --network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" --entrypoint docker "$RUNNER_IMAGE" \
         info >/dev/null 2>&1 && return 0
@@ -51,6 +53,7 @@ while :; do
   run=("$E" run --rm --name "agl-r$slot" "${dev[@]}" --security-opt seccomp=unconfined
        --memory "${MEM_LIMIT:-24g}" --cpus "${CPU_LIMIT:-8}" --pids-limit 8192 -e JITCONFIG="$cfg")
   [ "${DIND:-1}" = 1 ] && run+=(--network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" -e KAS_CONTAINER_ENGINE=docker -v "agl-w$slot:$WS")
+  [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" -e AGL_SSTATE_DIR="$CACHE_DIR/sstate" -e AGL_DL_DIR="$CACHE_DIR/dl")
   t0=$(date +%s)
   "${run[@]}" "$RUNNER_IMAGE" || echo "runner container exited non-zero" >&2
   if [ $(($(date +%s) - t0)) -lt 30 ]; then   # died at once: never served a job; drop the registration, back off
