@@ -15,6 +15,17 @@ Status: files and `scripts/github-settings.sh` **implemented**; settings applied
 
 ## Settings applied by `scripts/github-settings.sh`
 - Ruleset `main`: no deletion, no force-push, pull request required, status check `lint` required, 0 approvals, no bypass.
+  "Require branches to be up to date before merging" is on (`strict_required_status_checks_policy`, 2026-10-23): a pull
+  request must contain the current `main` and have a green `lint` on that state, so the merged result is what was
+  tested. Cost: every merge makes the other open pull requests out of date; for `lint` (one minute) that is cheap. A
+  repository whose required check is a multi-hour build needs a merge queue or accepts the serialisation of merges.
+
+Layer repos (2026-10-23): `meta-agl` has the same ruleset with the required check `ci / result` (the `result` job of the
+caller workflow), applied with `CHECK='ci / result' ONLY_RULESET=1 scripts/github-settings.sh dl9pf-agl/meta-agl`.
+`ONLY_RULESET=1` leaves the other repository settings alone; they are not applied to `meta-agl` yet (merge methods,
+secret scanning, push protection, private vulnerability reporting, full-SHA pinning). `meta-agl-demo`, `meta-agl-devel` and
+`agl-ucb` get the ruleset together with their caller workflow, because a required check that never reports blocks every
+merge.
 - Secret scanning and push protection on; private vulnerability reporting on.
 - Actions: full-SHA pinning required; fork-PR workflows need approval for all external contributors; default
   `GITHUB_TOKEN` read-only; Actions cannot approve PRs.
