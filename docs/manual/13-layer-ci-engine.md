@@ -32,6 +32,13 @@ Without `AGL_SCOPE` all repos in the tree are included (nightly).
 `KAS_CONTAINER_ENGINE` (default `docker`); `KAS_EXEC=kas`: `kas` in the current environment (e.g. inside the signed runner
 image, which contains kas and the Yocto host tools). Everything goes through `kas_run` in `_kas_runtime_args.sh`.
 
+## Trust rule for the tier
+The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
+share, where the job runs and what it may write. For `pull_request` events the workflow file, including the caller's
+`tier:` input, comes from the pull request, so the caller cannot be trusted. The matrix step therefore forces
+`tier=push-pr` for every `pull_request`; the other tiers only come from `push`, `schedule`, `release` and maintainers'
+`workflow_dispatch`.
+
 ## Reusable workflow
 `.github/workflows/layer-ci.yml` is called by the layer repos, pinned by full SHA. Inputs: `repo` (repo under test, scopes
 the downstream chain), `tier` (default: derived from the event), `kas_exec` (`kas-container` | `kas`), `ucb_ref` (agl-ucb
