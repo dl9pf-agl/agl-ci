@@ -15,6 +15,10 @@ Status: files and `scripts/github-settings.sh` **implemented**; settings applied
 
 ## Settings applied by `scripts/github-settings.sh`
 - Ruleset `main`: no deletion, no force-push, pull request required, status check `lint` required, 0 approvals, no bypass.
+  "Require branches to be up to date before merging" is on (`strict_required_status_checks_policy`, 2026-10-23): a pull
+  request must contain the current `main` and have a green `lint` on that state, so the merged result is what was
+  tested. Cost: every merge makes the other open pull requests out of date; for `lint` (one minute) that is cheap. A
+  repository whose required check is a multi-hour build needs a merge queue or accepts the serialisation of merges.
 - Secret scanning and push protection on; private vulnerability reporting on.
 - Actions: full-SHA pinning required; fork-PR workflows need approval for all external contributors; default
   `GITHUB_TOKEN` read-only; Actions cannot approve PRs.
