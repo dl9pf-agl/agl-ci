@@ -2,19 +2,23 @@
 # Apply the repository settings that the audit story depends on. Idempotent; needs `gh` with admin rights.
 # Usage: github-settings.sh [OWNER/REPO]            apply defaults (0 required approvals: solo maintainer)
 #        APPROVALS=1 BYPASS=admin github-settings.sh  require N approvals; BYPASS=admin lets repo admins bypass
+#        CHECK='ci / result' github-settings.sh OWNER/REPO   name of the required status check (default: lint)
+#        ONLY_RULESET=1 github-settings.sh OWNER/REPO         apply the ruleset only, leave the other repo settings
 # Settings that live in the web UI only are listed in docs/manual/12-repo-hardening.md.
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 repo="${1:-$(. policy/project.env; echo "$PROJECT_REPO")}"
-approvals="${APPROVALS:-0}"; bypass="${BYPASS:-none}"
+approvals="${APPROVALS:-0}"; bypass="${BYPASS:-none}"; check="${CHECK:-lint}"
 
-body="$(python3 -I - policy/github/ruleset-main.json "$approvals" "$bypass" <<'PY'
+body="$(python3 -I - policy/github/ruleset-main.json "$approvals" "$bypass" "$check" <<'PY'
 import json, sys
-f, n, bypass = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+f, n, bypass, check = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 d = json.load(open(f))
 for r in d["rules"]:
     if r["type"] == "pull_request":
         r["parameters"]["required_approving_review_count"] = n
+    if r["type"] == "required_status_checks":
+        r["parameters"]["required_status_checks"] = [{"context": check}]
 if bypass == "admin":   # RepositoryRole 5 = admin
     d["bypass_actors"] = [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
 print(json.dumps(d))
@@ -22,7 +26,8 @@ PY
 )"
 id="$(gh api "repos/$repo/rulesets" --jq '.[]|select(.name=="main" or .name=="default-protection-delete-and-force")|.id' | head -1)"
 if [ -n "$id" ]; then gh api -X PUT "repos/$repo/rulesets/$id" --input - <<<"$body" >/dev/null; else gh api -X POST "repos/$repo/rulesets" --input - <<<"$body" >/dev/null; fi
-echo "ruleset main: PR required, check 'lint' required, approvals=$approvals, bypass=$bypass"
+echo "ruleset main: PR required, check '$check' required and up to date, approvals=$approvals, bypass=$bypass"
+[ -z "${ONLY_RULESET:-}" ] || exit 0
 
 gh api -X PATCH "repos/$repo" --input - >/dev/null <<'JSON'
 {"delete_branch_on_merge": true, "allow_squash_merge": true, "allow_merge_commit": true, "allow_rebase_merge": false,
