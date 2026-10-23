@@ -74,7 +74,8 @@ size report belongs in the job summary.
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
 | M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | open |
 | M12 | Production cache split (agl-pr read-only, agl-release read-write) | later |
-| M13 | Deploy the wrynose hashserv container and wire `BB_HASHSERVE` (chapter 14) | open |
+| M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
+| M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
 | M14 | Input mirror for image rebuild inputs | low |
 | M15 | Unverified claims to test: kas with a present pinned commit and no network; `own-mirrors` conversion; sstate prune without access times; `cosign verify --local-image` on a skopeo-made archive | open |
 | M16 | Off-site second copy of releases for T2 and T3 | decide later |
