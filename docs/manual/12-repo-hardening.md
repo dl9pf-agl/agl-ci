@@ -15,12 +15,9 @@ Status: files and `scripts/github-settings.sh` **implemented**; settings applied
 
 ## Settings applied by `scripts/github-settings.sh`
 - Ruleset `main`: no deletion, no force-push, pull request required, status check `lint` required, 0 approvals, no bypass.
-  "Require branches to be up to date before merging" is on (`strict_required_status_checks_policy`, 2026-10-23): a pull
-  request must contain the current `main` and have a green `lint` on that state, so the merged result is what was
-  tested. Cost: every merge makes the other open pull requests out of date; for `lint` (one minute) that is cheap. A
-  repository whose required check is a multi-hour build needs a merge queue or accepts the serialisation of merges.
+  Merge method: **rebase only** (`allowed_merge_methods: ["rebase"]`, 2026-10-23), see "Merge strategy" below.
 
-Layer repos (2026-10-23): `meta-agl` has the same ruleset with the required check `ci / result` (the `result` job of the
+Layer repos (2026-10-23): `meta-agl` has the same ruleset (without the repo-level merge settings, the ruleset alone limits the method) with the required check `ci / result` (the `result` job of the
 caller workflow), applied with `CHECK='ci / result' ONLY_RULESET=1 scripts/github-settings.sh dl9pf-agl/meta-agl`.
 `ONLY_RULESET=1` leaves the other repository settings alone; they are not applied to `meta-agl` yet (merge methods,
 secret scanning, push protection, private vulnerability reporting, full-SHA pinning). `meta-agl-demo`, `meta-agl-devel` and
@@ -30,6 +27,7 @@ merge.
 - Actions: full-SHA pinning required; fork-PR workflows need approval for all external contributors; default
   `GITHUB_TOKEN` read-only; Actions cannot approve PRs.
 - Branches deleted on merge.
+- Merge methods: only rebase (repo setting and ruleset).
 
 Only `lint` is a required check on purpose: `images.yml` is path-filtered, and a required check that does not run
 blocks every PR that does not touch those paths. Image changes are covered by the `images` run on the PR and by
@@ -60,3 +58,35 @@ CII-Best-Practices. Not addressed on purpose: Fuzzing, SAST via CodeQL (zizmor c
 ## Adopting elsewhere
 `scripts/github-settings.sh OWNER/REPO` plus `policy/github/ruleset-main.json` reproduce the repo side. GitLab/Forgejo
 equivalents: protected branches, merge request approval rules, secret detection (chapter 11).
+
+## Merge strategy (decision 2026-10-23)
+Three options were weighed. The goal: linear history like Gerrit's "rebase if necessary", without hand-updating every
+pull request after each merge.
+
+| Option | What it does | Cost |
+|---|---|---|
+| 1. Up-to-date rule + manual update | PR must contain current `main` with green checks (`strict_required_status_checks_policy: true`) | every merge makes other PRs `BEHIND`; update by button or `gh pr update-branch --rebase N`; one CI run each |
+| **2. Rebase merge, no up-to-date rule (chosen)** | GitHub replays the PR commits onto current `main` at merge; `strict` is false | no manual update; the merged result was not built as such (CI ran before the rebase); new commit SHAs, so commit signatures on PR commits do not survive |
+| 3. Merge queue (**option, not enabled**) | queue rebases onto latest `main`, runs CI on that result, then merges | needs `merge_group` in every required workflow; build per queued PR; see below |
+
+Option 2 is set by `ruleset-main.json` (`allowed_merge_methods: ["rebase"]`, `strict_required_status_checks_policy:
+false`) and `scripts/github-settings.sh` (rebase allowed, squash and merge commit off). Applied to `agl-ci` and
+`meta-agl`. Revert to option 1 by setting `strict` back to true.
+
+Why the gap in option 2 is acceptable here: `lint` is one minute and the nightly build on `main` (layer repos) catches a
+bad combination within a day. If a repository sees broken `main` from interleaved merges, move it to option 3.
+
+### Option 3: merge queue (documented, not enabled)
+From the GitHub docs (Managing a merge queue): enabled per branch rule with "Require merge queue"; merge, rebase or
+squash can be chosen for queued PRs; **workflows must trigger on `merge_group`**, otherwise "status checks will not be
+triggered" and "the merge will fail"; limits for concurrent builds and PRs per merge; not usable with wildcard branch
+patterns. The docs page does not state which plans or repository visibilities have it: **verify on the org before
+relying on it** (settings of the `main` ruleset show the option or not).
+
+To adopt it:
+1. Add `merge_group:` to `on:` of every workflow that provides a required check (`lint.yml`, the layer callers; in
+   `layer-ci.yml` the tier for `merge_group` must be forced like for `pull_request`, never from inputs).
+2. Enable "Require merge queue" in the ruleset, merge method rebase, build concurrency 1 for the layer repos (one
+   self-hosted slot pool).
+3. Keep `strict` false (the queue provides the guarantee).
+Cost: a multi-hour cold build per queued PR; with the warm cache about 25 minutes each.
