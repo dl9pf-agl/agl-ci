@@ -50,7 +50,7 @@ Trial decision (2026-10-23): every slot, PR or release, reads AND writes the sam
 risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
 equivalence database in `sstate/` (sqlite). Before production: `agl-pr` slots mount the cache read-only, a trusted
 `agl-release` slot is the only writer (this was the original design), and the cache is rebuilt from scratch once.
-Delete the cache with `rm -rf $CACHE_DIR/*` (next build is cold). Size: expect 50-150 GB, check `df -h`.
+Hash equivalence and PR servers: chapter 14. Delete the cache with `rm -rf $CACHE_DIR/*` (next build is cold). Size: expect 50-150 GB, check `df -h`.
 
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
