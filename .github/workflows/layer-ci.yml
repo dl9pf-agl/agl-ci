@@ -75,6 +75,8 @@ jobs:
               *) tier="${DISPATCH_TIER:-dispatch}" ;;
             esac
           fi
+          # A pull request can edit its own caller file and pass any tier: it always builds push-pr
+          [ "$EVENT" != pull_request ] || tier=push-pr
           builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
           agl-ci/scripts/verify-release.sh "$builder"
           # kas clones the layers (repo under test pinned); the matrices live in them
