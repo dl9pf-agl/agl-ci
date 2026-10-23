@@ -39,6 +39,19 @@ it must not come from a checkout that a `git pull`, a branch switch or a non-roo
 root-owned snapshot of a reviewed commit; the cost is one `install` line. Alternative (rejected): `ExecStart`
 straight from the checkout, which makes every `git pull` an instant root-code change.
 
+## Shared cache (trial)
+`deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`, owner uid 1001 = runner user) with `sstate/` and `dl/`.
+`run-loop.sh` bind-mounts it at the same path into the DinD sidecar and the runner container and exports
+`AGL_SSTATE_DIR=$CACHE_DIR/sstate`, `AGL_DL_DIR=$CACHE_DIR/dl`; the engine turns them into the kas fragments
+`sstate-shared.yml` and `dl-shared.yml` (chapter 13). The sidecar needs the mount too, because `kas-container` runs
+in the sidecar's daemon and resolves host paths there.
+
+Trial decision (2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
+risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
+equivalence database in `sstate/` (sqlite). Before production: `agl-pr` slots mount the cache read-only, a trusted
+`agl-release` slot is the only writer (this was the original design), and the cache is rebuilt from scratch once.
+Delete the cache with `rm -rf $CACHE_DIR/*` (next build is cold). Size: expect 50-150 GB, check `df -h`.
+
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.

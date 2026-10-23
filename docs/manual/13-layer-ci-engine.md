@@ -50,7 +50,8 @@ AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/build.sh    --machine qemux86-64 --ta
 To test local layer changes use the opt-in dev mode of agl-ucb (`kas/local/dev.yml`, `scripts/aglsetup.sh --dev`): kas then
 never resets the layer clones. To build a specific commit set `AGL_PIN_REPO/URL/SHA` as above.
 `CI=true` adds `ci-only.yml` (passwordless login for HIL tests, buildhistory, CI tuning). Cache: `AGL_SSTATE_DIR`,
-`AGL_DL_DIR` (existing fragments in `agl-ucb/kas/local`); the shared-cache policy for the runner is decided in the next steps.
+`AGL_DL_DIR` (existing fragments in `agl-ucb/kas/local`); the kit sets both on the runner (chapter 05, "Shared cache"). `kas_runtime_args` mounts the directories at the
+same path into the kas container and forwards the variable; `kas_extra_includes` adds the two fragments.
 
 ## Changes against the original
 Tree root and matrices are parameters instead of the repo root; one `kas_run` instead of three `kas-container` call

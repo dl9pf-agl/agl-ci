@@ -4,7 +4,7 @@
 #   sudo GH_TOKEN=ghp_... ./deploy.sh            # token from env
 #   sudo ./deploy.sh                             # prompts (hidden)
 # Optional env: GH_ORG (default dl9pf-agl) SLOTS (default 1) ENGINE (docker|podman, default auto)
-#               LABELS (default agl-pr) MEM_LIMIT CPU_LIMIT 
+#               LABELS (default agl-pr) MEM_LIMIT CPU_LIMIT CACHE_DIR (default /srv/agl-cache)
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -46,8 +46,10 @@ LABELS=${LABELS:-agl-pr}
 MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
 DIND=${DIND:-1}
+CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
 EOF
 umask 022
+install -d -o 1001 -g 1001 -m 0755 "${CACHE_DIR:-/srv/agl-cache}" "${CACHE_DIR:-/srv/agl-cache}/sstate" "${CACHE_DIR:-/srv/agl-cache}/dl"   # 1001 = runner user
 install -m 0755 "$here/run-loop.sh" /opt/agl-runner/run-loop.sh
 install -m 0644 "$here/agl-runner@.service" /etc/systemd/system/agl-runner@.service
 

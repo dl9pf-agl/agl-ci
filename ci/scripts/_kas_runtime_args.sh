@@ -24,6 +24,7 @@
 #                       falls back to oe-core's own default (build/sstate-cache, inside the
 #                       repo work dir) - which is exactly what the GitHub Actions/GitLab CI
 #                       cache configs already target, so CI needs no changes.
+#   AGL_DL_DIR       - same for DOWNLOADS (kas/local/dl-shared.yml).
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -144,6 +145,9 @@ kas_extra_includes() {
   if [ -n "${AGL_SSTATE_DIR:-}" ]; then
     printf ':kas/local/sstate-shared.yml'
   fi
+  if [ -n "${AGL_DL_DIR:-}" ]; then
+    printf ':kas/local/dl-shared.yml'
+  fi
 }
 
 # kas/ci-only.yml carries agl-devel (passwordless login, needed for hardware-in-the-loop
@@ -202,6 +206,11 @@ kas_runtime_args() {
     # whether the value reaches the container process at all).
     printf -- '--runtime-args -v --runtime-args %s:%s --runtime-args -e --runtime-args AGL_SSTATE_DIR=%s ' \
       "${AGL_SSTATE_DIR}" "${AGL_SSTATE_DIR}" "${AGL_SSTATE_DIR}"
+  fi
+  if [ -n "${AGL_DL_DIR:-}" ]; then
+    mkdir -p "${AGL_DL_DIR}"
+    printf -- '--runtime-args -v --runtime-args %s:%s --runtime-args -e --runtime-args AGL_DL_DIR=%s ' \
+      "${AGL_DL_DIR}" "${AGL_DL_DIR}" "${AGL_DL_DIR}"
   fi
   if [ -n "${AGL_SITE_CONF:-}" ]; then
     printf -- '--runtime-args -v --runtime-args %s:/work/build/conf/site.conf:ro ' "${AGL_SITE_CONF}"
