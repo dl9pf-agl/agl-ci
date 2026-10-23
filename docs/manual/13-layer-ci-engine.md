@@ -32,6 +32,8 @@ Without `AGL_SCOPE` all repos in the tree are included (nightly).
 `KAS_CONTAINER_ENGINE` (default `docker`); `KAS_EXEC=kas`: `kas` in the current environment (e.g. inside the signed runner
 image, which contains kas and the Yocto host tools). Everything goes through `kas_run` in `_kas_runtime_args.sh`.
 
+`mode` input: `build` (default) or `drill` (chapter 15); `pull_request` always runs `build`.
+
 ## Trust rule for the tier
 The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
 share, where the job runs and what it may write. For `pull_request` events the workflow file, including the caller's

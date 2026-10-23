@@ -19,6 +19,7 @@ runner kit updates the matching chapter in the same commit.
 | 12 | [Repository hardening](12-repo-hardening.md) | Ruleset, secret scanning, Scorecard, approvals, owner-only settings |
 | 13 | [Layer CI engine](13-layer-ci-engine.md) | Build tree, matrices, scope chain, kas execution modes |
 | 14 | [Hash equivalence and PR servers](14-hashserv-and-prserv.md) | Which server where, read-only vs read-write, when a PR service is needed |
+| 15 | [Outage drill, mirrors, open items](15-outage-drill-and-mirrors.md) | Upstream-outage tiers, offline drill, mirror decisions, folder growth, tracked missing items |
 
 Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
 **planned**.
