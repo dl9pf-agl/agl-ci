@@ -72,6 +72,33 @@ Their own reports go to a database private to the run; known outputs still map t
   sstate object only causes a rebuild of that task (inference from `get_unihashes` and the sstate lookup, not tested).
 - Run all servers from one pinned image. The wrynose image uses bitbake 2.18, the branch that `agl-ucb` pins.
 
+## Deployment on the build host (test phase)
+The container comes from the `wrynose` (= `master`) branch of `dl9pf/docker-yp-prserv`, Debian 13 slim, bitbake 2.18.
+```
+git clone https://github.com/dl9pf/docker-yp-prserv && cd docker-yp-prserv      # branch master
+RW_BIND=<private address> RO_BIND=<build network address> ./build-and-run.sh
+docker ps --filter ancestor=prhashserv:production-wrynose-$(date +%F)
+ss -ltn | grep -E ':(9191|9292|9393|9494) '
+```
+- Data lives in the named volume `prhashserv-wrynose` (hashserv.db, prserv.db, logs). Back it up: stop the container
+  (`docker stop`, a clean stop takes about a second), then `docker run --rm --network none -v
+  prhashserv-wrynose:/v -v $PWD:/b debian:trixie-slim tar -C /v -czf /b/prhash-$(date +%F).tgz .`.
+- `RW_BIND` / `RO_BIND` set the address on which the read-write ports (9191, 9393) and the read-only ports (9292, 9494)
+  are published. On one test host the jobs reach the container through the host's own address (the per-job Docker
+  networks are created afresh, so the bridge address is not stable); there is then no isolation between PR and release
+  jobs, as with the cache trial. Docker publishes around ufw and firewalld: use the bind addresses or the `DOCKER-USER`
+  chain.
+- Check from a job container (no tools needed): `bash -c 'exec 3<>/dev/tcp/<host>/9494 && echo open'`. A real check
+  with the client library needs bitbake (`external/bitbake` in a CI tree): `hashserv.create_client("<host>:9494").ping()`
+  returns `{'alive': True}`.
+- Updating: run `./build-and-run.sh` again. It builds, stops and removes the container of the previous run and starts a
+  new one on the same volume. Old setups started with an anonymous volume are migrated by the same script (asks once).
+- Wiring into the builds is **not done yet** (open item M13b, chapter 15): the trial keeps the local `auto` server with
+  its database in the shared sstate directory. Planned: an env-driven fragment in agl-ucb (`BB_HASHSERVE` for trusted
+  builds, `auto` + `BB_HASHSERVE_UPSTREAM` for PR builds) selected by the runner pool. It has to be tested with real
+  bitbake: the existing `sstate-shared.yml` shows that a variable from the OS environment must be captured with `:=`
+  before it is used in another assignment.
+
 ## Roll-out
 1. Now: trial as in chapter 05. Local `auto` server, database in the shared sstate directory, every slot read-write.
 2. Start the wrynose container on the build host (read-write on a private interface, read-only on the cache network).
