@@ -26,11 +26,11 @@ PY
 )"
 id="$(gh api "repos/$repo/rulesets" --jq '.[]|select(.name=="main" or .name=="default-protection-delete-and-force")|.id' | head -1)"
 if [ -n "$id" ]; then gh api -X PUT "repos/$repo/rulesets/$id" --input - <<<"$body" >/dev/null; else gh api -X POST "repos/$repo/rulesets" --input - <<<"$body" >/dev/null; fi
-echo "ruleset main: PR required, check '$check' required and up to date, approvals=$approvals, bypass=$bypass"
+echo "ruleset main: PR required, check '$check' required, rebase merge only, approvals=$approvals, bypass=$bypass"
 [ -z "${ONLY_RULESET:-}" ] || exit 0
 
 gh api -X PATCH "repos/$repo" --input - >/dev/null <<'JSON'
-{"delete_branch_on_merge": true, "allow_squash_merge": true, "allow_merge_commit": true, "allow_rebase_merge": false,
+{"delete_branch_on_merge": true, "allow_squash_merge": false, "allow_merge_commit": false, "allow_rebase_merge": true,
  "security_and_analysis": {"secret_scanning": {"status": "enabled"}, "secret_scanning_push_protection": {"status": "enabled"}}}
 JSON
 echo "secret scanning + push protection enabled"
