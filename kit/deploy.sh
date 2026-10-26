@@ -4,7 +4,11 @@
 #   sudo GH_TOKEN=ghp_... ./deploy.sh            # token from env
 #   sudo ./deploy.sh                             # prompts (hidden)
 # Optional env: GH_ORG (default dl9pf-agl) SLOTS (default 1) ENGINE (docker|podman, default auto)
-#               LABELS (default agl-pr) MEM_LIMIT CPU_LIMIT CACHE_DIR (default /srv/agl-cache)
+#               POOL (trusted | untrusted, default trusted): a host serves one pool only. trusted = same-repo PRs, nightly,
+#               push, release (label agl-pr); untrusted = fork PRs (label agl-fork). SLOTS = number of slots on this host.
+#               MIRROR_URL (untrusted hosts): where the trusted mirror is read, e.g. https://mirror.example/
+#               LABELS (default by POOL) MEM_LIMIT CPU_LIMIT CACHE_DIR (default /srv/agl-cache)
+#               POOL and MIRROR_URL default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -34,6 +38,18 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOK
 [ "$code" = 200 ] || { echo "token check failed (HTTP $code): needs org $ORG 'Self-hosted runners: read/write' (or admin:org)" >&2; exit 1; }
 
 # --- config (token stays root-only on the host)
+# POOL and MIRROR_URL stay as deployed before unless given, so that a plain update does not undo them
+old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
+prev_pool="$(old POOL)"; [ -n "$prev_pool" ] || [ ! -f /etc/agl-runner/runner.env ] || prev_pool=trusted   # hosts from before pools are trusted
+POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"
+case "$POOL" in
+  trusted) default_labels=agl-pr ;;
+  untrusted) default_labels=agl-fork ;;
+  *) echo "POOL must be trusted or untrusted" >&2; exit 1 ;;
+esac
+if [ -n "$prev_pool" ] && [ "$prev_pool" != "$POOL" ] && [ -z "${FORCE_POOL_CHANGE:-}" ]; then
+  echo "this host is $prev_pool; a host never serves both pools. Set FORCE_POOL_CHANGE=1 to move it (and empty its CACHE_DIR)" >&2; exit 1
+fi
 install -d -m 0755 /opt/agl-runner
 install -d -m 0700 /etc/agl-runner
 umask 077
@@ -42,7 +58,9 @@ ENGINE=$ENGINE
 GH_ORG=$ORG
 GH_TOKEN=$GH_TOKEN
 RUNNER_GROUP_ID=1
-LABELS=${LABELS:-agl-pr}
+LABELS=${LABELS:-$default_labels}
+POOL=$POOL
+MIRROR_URL=$MIRROR_URL
 MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
 DIND=${DIND:-1}
@@ -73,5 +91,8 @@ printf "RUNNER_IMAGE=%s\nDIND_IMAGE=%s\n" "$image" "$DIND_IMAGE" >> /etc/agl-run
 # --- start
 systemctl daemon-reload
 for i in $(seq 1 "$SLOTS"); do systemctl enable --now "agl-runner@$i.service"; done
+for u in $(systemctl list-units --all --plain --no-legend 'agl-runner@*.service' | grep -o 'agl-runner@[0-9]*\.service' | sort -u); do   # slots no longer wanted
+  n="${u#agl-runner@}"; n="${n%.service}"; [ "$n" -le "$SLOTS" ] || systemctl disable --now "$u"
+done
 echo "done. status: systemctl status agl-runner@1 ; logs: journalctl -fu agl-runner@1"
-echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners (label: ${LABELS:-agl-pr})"
+echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners ($POOL pool, $SLOTS slots, label: ${LABELS:-$default_labels})"

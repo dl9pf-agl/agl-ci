@@ -24,8 +24,8 @@ runner image and `/dev/kvm` goes straight to the container.
 3. Pin the digest: `echo sha256:... > kit/runner.digest` (PR; the digest is printed by the `publish` job and
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
-   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default `agl-pr`; planned `agl-release` for release jobs on their own slots; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT`,
-   `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`.
+   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT`,
+   `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`, and for the pool `POOL`, `MIRROR_URL` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -46,11 +46,33 @@ straight from the checkout, which makes every `git pull` an instant root-code ch
 `sstate-shared.yml` and `dl-shared.yml` (chapter 13). The sidecar needs the mount too, because `kas-container` runs
 in the sidecar's daemon and resolves host paths there.
 
-Trial decision (2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
+Default (a trusted host, the trial decision of 2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
 risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
-equivalence database in `sstate/` (sqlite). Before production: `agl-pr` slots mount the cache read-only, a trusted
-`agl-release` slot is the only writer (this was the original design), and the cache is rebuilt from scratch once.
+equivalence database in `sstate/` (sqlite). Before production: fork pull requests move to an untrusted host (see "Pools")
+and the cache is rebuilt from scratch once.
 Hash equivalence and PR servers: chapter 14. Delete the cache with `rm -rf $CACHE_DIR/*` (next build is cold). Size: expect 50-150 GB, check `df -h`.
+
+## Pools (trusted and untrusted hosts)
+**A host serves one pool only; trusted and untrusted never share a physical server** (the privileged DinD sidecar and
+the shared kernel make anything else weak). `POOL` is `trusted` (default) or `untrusted`, `SLOTS` is the number of slots
+on this host (1..n); a pool can span several hosts.
+
+| Pool | Label | Jobs | `CACHE_DIR` | Mirror |
+|---|---|---|---|---|
+| trusted | `agl-pr` | pull requests from the repo itself, nightly, push to the default branch, tags, maintainer dispatch | read-write for all slots of the host; this is what Apache serves (chapter 15) | the source itself; `MIRROR_URL` optional (T2 tests) |
+| untrusted | `agl-fork` | pull requests from forks, after approval | read-write, private to this host, never served | `MIRROR_URL=https://...` of the trusted mirror, read-only over the network |
+
+Trust assumption: write access to the repo counts as trusted (a same-repo pull request author can already push a branch
+and start CI). A fork pull request can only write the cache of an untrusted host, so it cannot reach a release, the
+mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_MIRROR_URL` and is consumed once the
+consumer settings of chapter 15 (M4) are in agl-ucb.
+
+Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
+fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and
+`MIRROR_URL` are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
+an emptied `CACHE_DIR`. Until `layer-ci.yml` routes fork pull requests to `agl-fork` (chapter 15, step 3) an untrusted
+host stays idle and fork pull requests run on the trusted host as before, so the order of the steps is free; after the
+routing they wait for an `agl-fork` slot, so an untrusted host must exist.
 
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
@@ -65,7 +87,7 @@ test runner (`Debian-1303-trixie-amd64-base`, bare host install, labels `self-ho
 removed from the org when the kit replaces it.
 
 ## Labels
-`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-release`: release jobs, to be given their own slots when the release workflow exists (decision 2026-10-22: rename only for now). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
 
 ## Failure behaviour (run-loop.sh)
 - Preparation fails (network, volume, sidecar not answering within ~3 min): cleanup, back off 30 s x failures (max 10 min), no GitHub call.

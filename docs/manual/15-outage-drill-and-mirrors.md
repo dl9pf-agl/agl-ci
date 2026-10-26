@@ -93,6 +93,38 @@ Yocto autobuilder fragment `fragments/yocto-autobuilder/autobuilder.conf` (it se
 an upstream change. Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
 more.
 
+### Mirror design (decided 2026-10-26)
+**The cache of the trusted pool is the mirror.** Only trusted hosts (`agl-pr`: same-repo pull requests, nightly, push,
+release) write `/srv/agl-cache` (chapter 05, "Pools"); Apache serves it read-only, so there is no copy step and no
+publisher script on one host. Fork pull requests run on separate untrusted hosts (`agl-fork`) with a private cache and
+read the mirror over HTTPS through the same `PREMIRRORS` / `SSTATE_MIRRORS` settings (`AGL_MIRROR_URL`); outside users and
+a clean rebuild (T2) use the same URL. One mechanism for every consumer. Downloads are protected by the `SRC_URI`
+checksums; sstate objects have no integrity check, which is why only the trusted pool may write what is served.
+
+Apache (step 4): aliases `/dl` and `/sstate` onto the cache, read-only, no directory listing; deny `*.lock`, `*.tmp`,
+`git2/` and `hashserv.db*`; the `.siginfo` files must be served. Hash equivalence: read-write port only for the trusted
+pool, read-only port public (chapter 14).
+
+**Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
+`sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.
+A consumer that gets a unihash without its object misses and rebuilds that task; without hashserv it would miss as well,
+so a hashserv that is ahead of the mirror is never worse than no hashserv.
+
+**Rules that keep it correct when Apache runs on another host and the mirror is a copy:**
+1. Only trusted builds report to the hashserv, and every trusted host's cache is synced.
+2. Sync after every trusted job, not only nightly, with retries. Objects are content-addressed, so a re-sync is safe.
+3. Prune the mirror by age only; an old equivalence that points at a pruned object is a benign miss.
+
+Sync model for a separate Apache host: the web host pulls (`rsync -a --ignore-existing --delay-updates`, read-only rsync
+module or forced-command key, filters as above, every few minutes and after the nightly) from each trusted host, so no
+build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
+timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
+
+Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (fork pull
+requests to `agl-fork`, everything else to `agl-pr`); 4 Apache on this host; 5 consumer settings (M4); 6 hashserv wiring
+(M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_FETCH_PREMIRRORONLY`); 8 pull sync to a separate
+Apache host, pruning and monitoring (M11), git mirrors (M6), the other layer repos (M18), off-site copy (M16).
+
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
@@ -115,7 +147,7 @@ size report belongs in the job summary.
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
 | M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | open |
-| M12 | Production cache split (agl-pr read-only, agl-release read-write) | later |
+| M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part done (`POOL`, chapter 05); routing in `layer-ci.yml` pending; an untrusted host to be provisioned (user) |
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
 | M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
 | M14 | Input mirror for image rebuild inputs | low |
