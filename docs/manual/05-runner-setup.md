@@ -1,7 +1,8 @@
 # 05 Runner setup (Debian 13 host)
 
-Status: kit moved to `kit/`, pulls and verifies the signed runner image; `kit/runner.digest` pinned to the first verified publish (main run 39761708441). **Untested on the server.** Docker-in-Docker was validated
-earlier on a dev host with a locally built image.
+Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls and verifies the signed runner image;
+`kit/runner.digest` pinned to a verified publish). The untrusted host and the mirror web server (`kit/mirror/`) are new
+(2026-10-26) and not yet running on a server. The runbook below covers setup, daily use, reset and troubleshooting.
 
 ## What the kit does
 `kit/deploy.sh` (systemd + Docker/Podman, run from a checkout of this repo):
@@ -59,7 +60,7 @@ on this host (1..n); a pool can span several hosts.
 
 | Pool | Label | Jobs | `CACHE_DIR` | Mirror |
 |---|---|---|---|---|
-| trusted | `agl-pr` | pull requests from the repo itself, nightly, push to the default branch, tags, maintainer dispatch | read-write for all slots of the host; this is what Apache serves (chapter 15) | the source itself; `MIRROR_URL` optional (T2 tests) |
+| trusted | `agl-pr` | pull requests from the repo itself, nightly, push to the default branch, tags, maintainer dispatch | read-write for all slots of the host; this is what the mirror web server serves (chapter 15, `kit/mirror`) | the source itself; `MIRROR_URL` optional (T2 tests) |
 | untrusted | `agl-fork` | pull requests from forks, after approval | read-write, private to this host, never served | `MIRROR_URL=https://...` of the trusted mirror, read-only over the network |
 
 Trust assumption: write access to the repo counts as trusted (a same-repo pull request author can already push a branch
@@ -74,11 +75,112 @@ an emptied `CACHE_DIR`. `layer-ci.yml` sends fork pull requests to `agl-fork` an
 an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
 first, then pin the callers to the `layer-ci.yml` that routes.
 
+## Runbook: setup, daily use, reset
+Everything below is run on the host, as a user with `sudo`, from a checkout of this repo (`git clone
+https://github.com/dl9pf-agl/agl-ci`; commands are relative to it). `<token-file>` is a file with the org token (fine-grained
+PAT, *Self-hosted runners: Read and write*); the kit never prints it and keeps it only in `/etc/agl-runner/runner.env` (0600).
+
+### Where things live
+| What | Where |
+|---|---|
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR RUNNER_IMAGE DIND_IMAGE` (`SLOTS` is not stored: it comes from the environment of the deploy) |
+| Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
+| Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
+| Cache | `CACHE_DIR` (default `/srv/agl-cache`, owner uid 1001): `sstate/`, `dl/` |
+| Mirror web server (trusted host) | container `agl-mirror`, files in `kit/mirror/` |
+| Logs | `journalctl -fu agl-runner@N`; `docker logs agl-mirror` |
+
+### Host roles
+| Role | Pool | Label | Runs |
+|---|---|---|---|
+| Trusted build host (today's host) | `trusted` | `agl-pr` | same-repo pull requests, nightly, push, release; owns the cache that is the mirror; also runs the mirror web server and, later, the hashserv container (chapter 14) |
+| Untrusted build host (second machine) | `untrusted` | `agl-fork` | pull requests from forks only; private cache; reads the mirror over the network |
+They are different physical machines. Never put both roles on one host.
+
+### First setup
+Trusted host (the existing one already is):
+1. `sudo SLOTS=2 ./kit/deploy.sh <token-file>`. It verifies the token, installs Docker if missing, verifies the pinned runner
+   image with `cosign`, writes the config, creates `CACHE_DIR`, starts the slots.
+2. `CACHE_DIR=/srv/agl-cache ./kit/mirror/run.sh` starts the mirror web server (port 8080).
+3. Check (below).
+
+Untrusted host:
+1. `sudo POOL=untrusted MIRROR_URL=http://<trusted-host>:8080 SLOTS=2 ./kit/deploy.sh <token-file>`.
+2. Check (below). Fork pull requests start to build once the callers pin a `layer-ci.yml` that routes (chapter 13).
+
+### Check after any setup
+- `systemctl is-active 'agl-runner@*'` prints `active` per slot; `sudo grep -v TOKEN /etc/agl-runner/runner.env` shows the
+  expected `POOL`, `LABELS`, `CACHE_DIR`.
+- Org Settings > Actions > Runners: one idle runner per slot, labels `self-hosted Linux X64` plus the pool label.
+- Trusted host: `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/dl/` prints `403` (listing off), a real file
+  under `$CACHE_DIR/dl` prints `200`.
+- A real job: a pull request or `workflow_dispatch` of the caller; first build on an empty cache is cold (hours), the next one warm (about 25 minutes).
+
+### Daily use
+| Task | Command |
+|---|---|
+| Update the host to the current `main` | `./kit/update.sh [token-file]` (git pull, deploy, restart all slots; `POOL`, `MIRROR_URL` are kept; `SLOTS=n` to change the number) |
+| Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled) |
+| New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
+| Change limits | `MEM_LIMIT=32g CPU_LIMIT=12 ./kit/update.sh` |
+| Status | `systemctl status 'agl-runner@*'`, `docker ps` |
+| Pause the host | `sudo systemctl stop 'agl-runner@*'` (jobs in progress are killed: wait until the runners are idle) |
+| Resume | `sudo systemctl start agl-runner@1 agl-runner@2` |
+| Restart the mirror | `./kit/mirror/run.sh` (recreates the container) |
+
+A restart kills the job in progress (the first pilot build died this way). Check the Actions tab before restarting.
+
+### Reset and re-setup, from small to complete
+1. **Restart the slots** (changed `run-loop.sh` or `runner.env`): `sudo systemctl restart 'agl-runner@*'`.
+2. **Remove stale Docker state** after a crash or kill (the cleanup trap did not run). Stop the slots first:
+   ```
+   sudo systemctl stop 'agl-runner@*'
+   docker rm -f $(docker ps -aq --filter 'name=^agl-[rd][0-9]+$') 2>/dev/null
+   docker network rm $(docker network ls -q --filter 'name=^agl-n[0-9]+$') 2>/dev/null
+   docker volume rm $(docker volume ls -q --filter 'name=^agl-w[0-9]+$') 2>/dev/null
+   sudo systemctl start agl-runner@1 agl-runner@2
+   ```
+   The patterns leave `agl-mirror` alone.
+3. **Remove stale runner registrations** at GitHub (offline entries after a crash; normal jobs remove their own):
+   ```
+   gh api orgs/dl9pf-agl/actions/runners --paginate -q '.runners[]|select(.status=="offline")|"\(.id) \(.name)"'
+   gh api -X DELETE orgs/dl9pf-agl/actions/runners/<id>
+   ```
+4. **Cold cache** (trusted host: this also empties the mirror and the hash equivalence database, which lives in `sstate/`).
+   Stop the slots, `sudo rm -rf $CACHE_DIR/sstate/* $CACHE_DIR/dl/*`, start the slots. Refill: run the caller with
+   `mode: fetch`, `tier: dispatch`, then a build or the next nightly. Untrusted host: the same, and nothing else depends on it.
+5. **Re-setup the host from scratch** (new OS, broken state). `runner.env` is deleted here, so `POOL` and `MIRROR_URL`
+   must be given again:
+   ```
+   sudo systemctl disable --now 'agl-runner@*'
+   (remove stale Docker state as in 2)
+   sudo rm -rf /opt/agl-runner /etc/agl-runner /etc/systemd/system/agl-runner@.service && sudo systemctl daemon-reload
+   sudo [POOL=untrusted MIRROR_URL=...] SLOTS=2 ./kit/deploy.sh <token-file>
+   ```
+   Keep `CACHE_DIR` if you want to keep a warm cache; the deploy reuses it.
+6. **Change the pool of a host**: only with an emptied cache: `FORCE_POOL_CHANGE=1 POOL=untrusted ./kit/update.sh`. A host
+   never serves both pools; prefer re-setting up a different machine.
+7. **Decommission a host**: as in 5 without the final deploy, plus `docker rm -f agl-mirror` on the trusted host, `rm -rf
+   $CACHE_DIR` if wanted, and delete stale registrations (3).
+
+### Troubleshooting
+| Symptom | Cause | Fix |
+|---|---|---|
+| `deploy.sh`: `token check failed (HTTP 403/404)` | token lacks *Self-hosted runners: Read and write* on the org, or wrong org | new fine-grained PAT, `GH_ORG=...` |
+| `deploy.sh`: `this host is trusted; a host never serves both pools` | `POOL` differs from the previous deploy | see reset 6 |
+| `deploy.sh`: `kit/runner.digest is empty` / `cosign verify` fails | no published runner image or wrong identity | chapter 04; pin the digest |
+| No runner appears in the org | token, group not allowed for public repos, or label typo | `journalctl -fu agl-runner@1`; Runner groups > allow public repositories |
+| `sidecar agl-dN never answered` | Docker daemon or `docker:dind` image problem | `docker logs agl-dN`; reset 2; the loop backs off up to 10 minutes |
+| Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr` | set up the missing role; check `LABELS` |
+| Runner offline entries pile up | crashes | reset 3 |
+| `df` full | cache or Docker data | cache size 50-150 GB; `docker system df`; reset 2 and 4 |
+| Offline drill finds misses | cache cold or never fetched | chapter 15: fetch mode, then drill |
+
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.
 - Runner container: non-root, default caps, `seccomp=unconfined` (bitbake `unshare()`).
-- No volumes besides the workspace: builds start cold. A trusted read-only sstate mirror can be added later.
+- Bind mounts besides the per-job workspace volume: only `CACHE_DIR` (read-write; one pool per host). The mirror web server mounts it read-only.
 - Never run `pull_request_target` workflows on this runner.
 
 ## Open points
