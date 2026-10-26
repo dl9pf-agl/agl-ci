@@ -69,6 +69,19 @@ release jobs fill the mirrors** (single writer). Test phase: the mirror is a dir
 Apache. Final: a separate Apache machine; the transport for writing (staging directory on NFS, or the server pulls) is
 decided at provisioning.
 
+### Filling the download cache (`mode: fetch`)
+`ci/scripts/fetch.sh --machine M --features F --target T` runs `bitbake -k --runall=fetch <target>` with the network
+on and `build/ci-kas/ci-mirror.yml` (`BB_GENERATE_MIRROR_TARBALLS = "1"`). It fetches every source of the target into
+`AGL_DL_DIR` and writes a `git2_*.tar.gz` for every git source, because a plain `git2/` clone cannot be served as a
+file over HTTP. The reusable workflow runs it for `mode: fetch`; a caller adds a scheduled job with `tier: dispatch`
+(selects every image of the matrix, also the ones that are not built nightly) and `mode: fetch`. Only trusted events
+can use it: a `pull_request` is always `mode: build`.
+
+V (`fetch2/__init__.py`, `fetch2/git.py`): `build_mirror_data` runs only after an upstream `download`, and the git
+tarball is written only when `BB_GENERATE_MIRROR_TARBALLS` is not `0`. Not verified: whether a source that is already
+cloned in `DL_DIR` gets its tarball on the next run. Check after the first fill: `ls $AGL_DL_DIR/git2_*.tar.gz | wc -l`
+against the number of `git2/` directories; if they differ, fill into an empty directory once.
+
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
@@ -84,7 +97,7 @@ size report belongs in the job summary.
 | M2 | `publish-artifacts.sh` copying a whitelist plus manifest to `ARTIFACT_DEST=dir:`; staging, published, rejected trees; routing by pool | open |
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | open |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | open |
-| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and `fetchall` for all matrix targets in nightly and release | open |
+| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh` and `mode: fetch` done; the scheduled call in the layer callers pending; git tarballs for already cloned sources to be checked on the first run |
 | M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | open |
 | M7 | Outage drill | script done (stand-in kas); run on real bitbake pending |
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |
