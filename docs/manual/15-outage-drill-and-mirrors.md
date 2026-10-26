@@ -51,6 +51,10 @@ the mirrors alone, ignoring the upstream URL of every recipe.
   download.gnome.org, x.org, freedesktop.org and a few single-project hosts. Git sources need
   `BB_GENERATE_MIRROR_TARBALLS` to become mirrorable files.
 - Image recipes have no `do_fetchall`; the drill uses `bitbake --runall=fetch`.
+- After one fetch of all four images (`mode: fetch`, `tier: dispatch`, below) the drill reports **0 misses for all four**:
+  recipe sources and the uninative tarball come from `DL_DIR` with the network off. The fetch left 109 `git2_*.tar.gz`
+  mirror tarballs in `DL_DIR`. What the drill does not prove: fetches inside `do_compile` (drill B, build mode) and
+  offline layer checkout (drill C).
 
 Uninative (V: `uninative.bbclass`): on `BuildStarted` the handler returns early if the loader is already extracted in
 `${TMPDIR}/sysroots-uninative`; otherwise it fetches `${UNINATIVE_DLDIR}/<sha256>/<tarball>` (`UNINATIVE_DLDIR` is
@@ -82,6 +86,13 @@ tarball is written only when `BB_GENERATE_MIRROR_TARBALLS` is not `0`. Not verif
 cloned in `DL_DIR` gets its tarball on the next run. Check after the first fill: `ls $AGL_DL_DIR/git2_*.tar.gz | wc -l`
 against the number of `git2/` directories; if they differ, fill into an empty directory once.
 
+The nightly of `meta-agl` runs it as the scheduled job `fetch` next to the build (the other layer repos get the same job
+with their caller, M18). When the source mirror is wired in (M4), the fill job must set `PREMIRRORS = ""`, like the
+Yocto autobuilder fragment `fragments/yocto-autobuilder/autobuilder.conf` (it sets `BB_GENERATE_MIRROR_TARBALLS = '1'` and
+`PREMIRRORS = ''`): the fill reads from the real upstream, never from our own mirror, so that a stale mirror cannot hide
+an upstream change. Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
+more.
+
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
@@ -97,9 +108,9 @@ size report belongs in the job summary.
 | M2 | `publish-artifacts.sh` copying a whitelist plus manifest to `ARTIFACT_DEST=dir:`; staging, published, rejected trees; routing by pool | open |
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | open |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | open |
-| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh` and `mode: fetch` done; the scheduled call in the layer callers pending; git tarballs for already cloned sources to be checked on the first run |
+| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; `PREMIRRORS = ""` for the fill job when M4 lands; git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
 | M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | open |
-| M7 | Outage drill | script done (stand-in kas); run on real bitbake pending |
+| M7 | Outage drill | fetch drill A done on real bitbake (2026-10-26): 0 misses for all four meta-agl images after a fetch. Drill B (full offline build) and drill C (offline layers) open |
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
