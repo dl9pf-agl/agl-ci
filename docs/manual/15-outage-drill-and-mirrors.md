@@ -44,6 +44,24 @@ inside a tree: `AGL_TREE=... KAS_EXEC=kas CI=true ci/scripts/drill.sh ...`.
 Optional hardening: add `BB_FETCH_PREMIRRORONLY = "1"` to the offline fragment (V: only PREMIRRORS are searched) to test
 the mirrors alone, ignoring the upstream URL of every recipe.
 
+## First drill results (2026-10-26, meta-agl, qemux86-64)
+- `agl-image-minimal` (warm cache): every recipe source comes from DL_DIR offline. One miss: the **uninative tarball**.
+- weston, compositor, core-autobuilder (cold cache, never built here): 24 to 38 misses, all recipe sources. They show what
+  the mirror must hold: github.com, gitlab.freedesktop.org, git.sr.ht, git.yoctoproject.org, gerrit.automotivelinux.org,
+  download.gnome.org, x.org, freedesktop.org and a few single-project hosts. Git sources need
+  `BB_GENERATE_MIRROR_TARBALLS` to become mirrorable files.
+- Image recipes have no `do_fetchall`; the drill uses `bitbake --runall=fetch`.
+
+Uninative (V: `uninative.bbclass`): on `BuildStarted` the handler returns early if the loader is already extracted in
+`${TMPDIR}/sysroots-uninative`; otherwise it fetches `${UNINATIVE_DLDIR}/<sha256>/<tarball>` (`UNINATIVE_DLDIR` is
+`${DL_DIR}/uninative/`), tries `PREMIRRORS` lines starting with `http` first (rewritten to
+`<mirror>/uninative/<sha256>/<tarball>`, so the mirror needs that layout) and extracts it. In a CI job the first bitbake
+run is `yocto-check-layer` of `validate.sh`; it used the bare `_validate-base.yml` without `dl-shared.yml`, so the
+tarball went to the throw-away `build/downloads` and the build step then found the loader and never touched the shared
+`DL_DIR`. The shared cache therefore never held it. Fixed by giving the `yocto-check-layer` step the shared downloads
+(`kas_dl_include`; sstate stays private to it). The drill skips `validate.sh`, so it is the first run to need the file
+from `DL_DIR`.
+
 ## Mirrors in the build path (decided)
 No NFS server (verified in bitbake: `BB_HASHSERVE_DB_DIR` on NFS is fatal, the sqlite file must stay local). Every
 builder keeps its permanent local cache (`CACHE_DIR`, chapter 05) and reads the shared HTTP mirrors; **nightly and
