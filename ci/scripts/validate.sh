@@ -68,7 +68,9 @@ CHECK_LAYER_PATHS=""
 for l in $CHECK_LAYERS; do
   CHECK_LAYER_PATHS="$CHECK_LAYER_PATHS $AGL_WORKDIR/$l"
 done
-run_check "yocto-check-layer" "build/ci-kas/_validate-base.yml:kas/pins.yml" \
+# dl-shared: this is the first bitbake run of a job, so it fetches the uninative tarball; without the shared
+# downloads it lands in the throw-away build/downloads and never reaches the cache.
+run_check "yocto-check-layer" "build/ci-kas/_validate-base.yml:kas/pins.yml$(kas_dl_include)" \
   "yocto-check-layer$CHECK_LAYER_PATHS $CHECK_LAYER_ARGS"
 
 run_check "license-manifest" "$KASFILES" \

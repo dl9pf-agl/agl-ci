@@ -145,6 +145,11 @@ kas_extra_includes() {
   if [ -n "${AGL_SSTATE_DIR:-}" ]; then
     printf ':kas/local/sstate-shared.yml'
   fi
+  kas_dl_include
+}
+
+# Only the shared downloads. For configs that must not write into the shared sstate (yocto-check-layer).
+kas_dl_include() {
   if [ -n "${AGL_DL_DIR:-}" ]; then
     printf ':kas/local/dl-shared.yml'
   fi
