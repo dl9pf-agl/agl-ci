@@ -32,7 +32,7 @@ LOG="$RESULTS_DIR/$MODE.log"
 echo "drill.sh: $MODE of $TARGET with BB_NO_NETWORK=1 ($KASFILES)"
 if [ "$MODE" = fetchall ]; then
   # -k: keep going, so that one run lists every miss, not only the first
-  kas_run shell "$KASFILES" -c "bitbake -k -c fetchall $TARGET" >"$LOG" 2>&1
+  kas_run shell "$KASFILES" -c "bitbake -k --runall=fetch $TARGET" >"$LOG" 2>&1
 else
   KAS_TARGET="$TARGET" kas_run build "$KASFILES" >"$LOG" 2>&1
 fi

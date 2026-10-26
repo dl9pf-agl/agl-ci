@@ -27,7 +27,7 @@ Marked V = verified in documentation or source; the rest is proven by the drill.
 ## The drill
 `ci/scripts/drill.sh --machine M --features F --target T [--mode fetchall|build]` adds `build/ci-kas/ci-offline.yml`
 (`BB_NO_NETWORK = "1"`: any network access in the bitbake fetcher is an error) and runs:
-- **fetchall** (minutes): `bitbake -k -c fetchall <target>`. Every `SRC_URI` of the target closure must come from DL_DIR or a
+- **fetchall** (minutes): `bitbake -k --runall=fetch <target>` (image recipes have no `do_fetchall`, `--runall` runs the task for every recipe in the target's task graph). Every `SRC_URI` of the target closure must come from DL_DIR or a
   mirror. `-k` makes one run list every miss. It cannot see fetches inside `do_compile`.
 - **build** (hours): the full build. Use an empty sstate dir so every task runs; this finds recipes that fetch while
   compiling (npm, pub, cargo, flutter).
