@@ -70,9 +70,9 @@ consumer settings of chapter 15 (M4) are in agl-ucb.
 Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
 fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and
 `MIRROR_URL` are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
-an emptied `CACHE_DIR`. Until `layer-ci.yml` routes fork pull requests to `agl-fork` (chapter 15, step 3) an untrusted
-host stays idle and fork pull requests run on the trusted host as before, so the order of the steps is free; after the
-routing they wait for an `agl-fork` slot, so an untrusted host must exist.
+an emptied `CACHE_DIR`. `layer-ci.yml` sends fork pull requests to `agl-fork` and everything else to `agl-pr` (chapter 13), so
+an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
+first, then pin the callers to the `layer-ci.yml` that routes.
 
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.

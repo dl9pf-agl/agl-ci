@@ -120,7 +120,7 @@ module or forced-command key, filters as above, every few minutes and after the 
 build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
 timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
 
-Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (fork pull
+Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (done: fork pull
 requests to `agl-fork`, everything else to `agl-pr`); 4 Apache on this host; 5 consumer settings (M4); 6 hashserv wiring
 (M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_FETCH_PREMIRRORONLY`); 8 pull sync to a separate
 Apache host, pruning and monitoring (M11), git mirrors (M6), the other layer repos (M18), off-site copy (M16).
@@ -147,7 +147,7 @@ size report belongs in the job summary.
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
 | M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | open |
-| M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part done (`POOL`, chapter 05); routing in `layer-ci.yml` pending; an untrusted host to be provisioned (user) |
+| M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part and routing in `layer-ci.yml` done (`POOL`, chapter 05; chapter 13); an untrusted host to be provisioned and fork pull requests to be tested on it (user, then me) |
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
 | M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
 | M14 | Input mirror for image rebuild inputs | low |
