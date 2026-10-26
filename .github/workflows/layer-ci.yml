@@ -46,6 +46,7 @@ jobs:
       matrix: ${{ steps.gen.outputs.matrix }}
       tier: ${{ steps.gen.outputs.tier }}
       mode: ${{ steps.gen.outputs.mode }}
+      pool: ${{ steps.gen.outputs.pool }}
       builder: ${{ steps.gen.outputs.builder }}
       count: ${{ steps.gen.outputs.count }}
     steps:
@@ -70,6 +71,8 @@ jobs:
           MODE_IN: ${{ inputs.mode }}
           EVENT: ${{ github.event_name }}
           DISPATCH_TIER: ${{ github.event.inputs.tier }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tier="$TIER_IN"
@@ -86,6 +89,9 @@ jobs:
           # same for the mode: a pull request must not swap validate + build for a drill and still get a green result
           mode="$MODE_IN"; [ "$EVENT" != pull_request ] || mode=build
           case "$mode" in build|drill|fetch) ;; *) echo "mode must be build, drill or fetch" >&2; exit 1 ;; esac
+          # Pool: a pull request from another repo (or from a deleted one) runs on an untrusted host, everything else on a trusted
+          # one. Decided here from the event, never from the caller's inputs. See docs/manual/05-runner-setup.md, Pools.
+          pool=agl-pr; [ "$EVENT" != pull_request ] || [ "$HEAD_REPO" = "$THIS_REPO" ] || pool=agl-fork
           builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
           agl-ci/scripts/verify-release.sh "$builder"
           # kas clones the layers (repo under test pinned); the matrices live in them
@@ -97,6 +103,7 @@ jobs:
           {
             echo "tier=$tier"
             echo "mode=$mode"
+            echo "pool=$pool"
             echo "builder=$builder"
             json="$(AGL_TREE=$PWD/tree AGL_SCOPE=$REPO python3 agl-ci/ci/scripts/_matrix.py --json "$tier")"
             echo "matrix=$json"
@@ -118,7 +125,7 @@ jobs:
     name: build (${{ matrix.repo }}/${{ matrix.target }} on ${{ matrix.machine }})
     needs: [matrix, approve]
     if: always() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0'
-    runs-on: [self-hosted, agl-pr]
+    runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
     timeout-minutes: 600
     permissions: { contents: read }
     strategy:

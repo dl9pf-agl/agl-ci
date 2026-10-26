@@ -41,6 +41,12 @@ share, where the job runs and what it may write. For `pull_request` events the w
 `tier=push-pr` for every `pull_request`; the other tiers only come from `push`, `schedule`, `release` and maintainers'
 `workflow_dispatch`.
 
+The same rule picks the runner pool (chapter 05, "Pools"): the matrix step sets `pool=agl-fork` when the event is a
+`pull_request` whose head repository is not the repository itself (a fork, or a deleted fork, so it fails closed), and
+`pool=agl-pr` for everything else; the build job uses it in `runs-on`. It is decided from the event in the pinned
+workflow, never from a caller input, so a pull request cannot edit its way onto the trusted pool. Fork pull requests
+wait until an `agl-fork` runner (an untrusted host) exists.
+
 ## Reusable workflow
 `.github/workflows/layer-ci.yml` is called by the layer repos, pinned by full SHA. Inputs: `repo` (repo under test, scopes
 the downstream chain), `tier` (default: derived from the event), `kas_exec` (`kas-container` | `kas`), `ucb_ref` (agl-ucb
