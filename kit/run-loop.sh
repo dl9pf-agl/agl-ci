@@ -6,9 +6,17 @@ set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
 . /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS MEM_LIMIT CPU_LIMIT DIND CACHE_DIR
+#                               POOL MIRROR_URL
 E="$ENGINE"; WS=/home/runner/actions-runner/_work   # same path in runner + sidecar (nested bind mounts)
-# Shared sstate + downloads (trial: every slot reads and writes). Same path in host, sidecar and runner.
-cache=(); [ -z "${CACHE_DIR:-}" ] || cache=(-v "$CACHE_DIR:$CACHE_DIR")
+# Cache of this host: all its slots read and write CACHE_DIR, same path in host, sidecar and runner. A host is either
+# trusted or untrusted (POOL, set by deploy.sh), never both, so its cache never mixes the two. A trusted host's
+# CACHE_DIR is the mirror source; an untrusted host reads the mirror over the network (MIRROR_URL, chapter 15).
+cache=(); cache_env=()
+if [ -n "${CACHE_DIR:-}" ]; then
+  cache=(-v "$CACHE_DIR:$CACHE_DIR")
+  cache_env=(-e AGL_SSTATE_DIR="$CACHE_DIR/sstate" -e AGL_DL_DIR="$CACHE_DIR/dl")
+  [ -z "${MIRROR_URL:-}" ] || cache_env+=(-e AGL_MIRROR_URL="$MIRROR_URL")
+fi
 dev=(); [ -c /dev/kvm ] && dev=(--device /dev/kvm) || echo "warn: no /dev/kvm" >&2
 
 cleanup() { "$E" rm -f "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
@@ -53,7 +61,7 @@ while :; do
   run=("$E" run --rm --name "agl-r$slot" "${dev[@]}" --security-opt seccomp=unconfined
        --memory "${MEM_LIMIT:-24g}" --cpus "${CPU_LIMIT:-8}" --pids-limit 8192 -e JITCONFIG="$cfg")
   [ "${DIND:-1}" = 1 ] && run+=(--network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" -e KAS_CONTAINER_ENGINE=docker -v "agl-w$slot:$WS")
-  [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" -e AGL_SSTATE_DIR="$CACHE_DIR/sstate" -e AGL_DL_DIR="$CACHE_DIR/dl")
+  [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" "${cache_env[@]}")
   t0=$(date +%s)
   "${run[@]}" "$RUNNER_IMAGE" || echo "runner container exited non-zero" >&2
   if [ $(($(date +%s) - t0)) -lt 30 ]; then   # died at once: never served a job; drop the registration, back off
