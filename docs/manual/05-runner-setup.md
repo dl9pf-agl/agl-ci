@@ -66,8 +66,8 @@ on this host (1..n); a pool can span several hosts.
 
 Trust assumption: write access to the repo counts as trusted (a same-repo pull request author can already push a branch
 and start CI). A fork pull request can only write the cache of an untrusted host, so it cannot reach a release, the
-mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_MIRROR_URL` and is consumed once the
-consumer settings of chapter 15 (M4) are in agl-ucb.
+mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_MIRROR_URL`; the engine then includes `kas/local/mirrors.yml` of agl-ucb
+(chapter 15, "Consumer settings").
 
 Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
 fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and

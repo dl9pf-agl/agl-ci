@@ -115,6 +115,18 @@ integrity check), so use it on a network you control. Any other web server works
 (`sstate/corei7-64/...`); the consumer URL in M4 must contain `${DEFAULTTUNE}`. Hash equivalence: read-write port only
 for the trusted pool, read-only port public (chapter 14).
 
+**Consumer settings (M4).** `kas/local/mirrors.yml` in agl-ucb is included by the engine when `AGL_MIRROR_URL` is set (an
+http(s) URL without a trailing slash; the engine strips one and refuses other schemes). It puts `$AGL_MIRROR_URL/dl/` in
+front of the upstream URL of every recipe (`PREMIRRORS` for git, gitsm, ftp, http, https; the uninative tarball is found
+through the http line) and `$AGL_MIRROR_URL/sstate/${DEFAULTTUNE}/PATH` in front of the sstate lookup (`SSTATE_MIRRORS`),
+captured with `:=` like `AGL_SSTATE_DIR` (tested with bitbake 2.18: both variables expand to the mirror). The variable is
+forwarded into the container; no mount is needed. Who sets it: the kit on an untrusted host (`MIRROR_URL`, chapter 05),
+a developer by hand, a clean rebuild (T2). A trusted host leaves it empty and uses its own cache. `fetch.sh` (the fill) and
+`drill.sh` (offline) unset it on purpose: the fill reads the real upstreams, and a network-off drill can only produce
+misses through a URL. AGL's own `MIRRORS` in `agl.conf` stay as the last line. AGL's public mirror
+`download.automotivelinux.org/AGL/mirror/` (and `sstate-mirror/master/<tune>/`) answers today; it is not used as a primary
+and whether its sstate objects match our hashes is not checked.
+
 **Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
 `sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.
 A consumer that gets a unihash without its object misses and rebuilds that task; without hashserv it would miss as well,
@@ -149,8 +161,8 @@ size report belongs in the job summary.
 | M1 | Web server: /dl and /sstate done (nginx container, `kit/mirror`, read-only; start it on the host: user); TLS, /artifacts and the write path open | partly done |
 | M2 | `publish-artifacts.sh` copying a whitelist plus manifest to `ARTIFACT_DEST=dir:`; staging, published, rejected trees; routing by pool | open |
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | open |
-| M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | open |
-| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; `PREMIRRORS = ""` for the fill job when M4 lands; git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
+| M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | fragment and engine wiring done (agl-ucb first, then agl-ci); proof by the drill from the mirror alone (step 7) pending |
+| M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; the fill job reads no mirror (`fetch.sh` unsets `AGL_MIRROR_URL`); git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
 | M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | open |
 | M7 | Outage drill | fetch drill A done on real bitbake (2026-10-26): 0 misses for all four meta-agl images after a fetch. Drill B (full offline build) and drill C (offline layers) open |
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |

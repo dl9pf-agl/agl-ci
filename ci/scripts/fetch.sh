@@ -11,6 +11,9 @@ cd "$TREE" || exit 1
 
 parse_common_args "$@"
 
+# The fill reads from the real upstreams, never from a mirror (a stale mirror must not hide an upstream change, chapter 15).
+unset AGL_MIRROR_URL
+
 matrix_fields kasfiles,target
 KASFILES="${_MATRIX_FIELDS[0]}$(kas_extra_includes)$(kas_ci_includes):build/ci-kas/ci-mirror.yml"
 TARGET="${_MATRIX_FIELDS[1]}"
