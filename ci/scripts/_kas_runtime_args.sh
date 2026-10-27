@@ -25,6 +25,9 @@
 #                       repo work dir) - which is exactly what the GitHub Actions/GitLab CI
 #                       cache configs already target, so CI needs no changes.
 #   AGL_DL_DIR       - same for DOWNLOADS (kas/local/dl-shared.yml).
+#   AGL_MIRROR_URL   - http(s) URL (no trailing slash) of a source and sstate mirror laid out like kit/mirror:
+#                       $URL/dl/ and $URL/sstate/<DEFAULTTUNE>/. Wired in through the kas/local/mirrors.yml fragment
+#                       (PREMIRRORS and SSTATE_MIRRORS) and forwarded into the container; nothing is mounted.
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -56,6 +59,8 @@ mkdir -p "$TREE/build/ci-kas" && cp "$ENGINE/../kas/"*.yml "$TREE/build/ci-kas/"
 # environment (e.g. inside the signed runner image). Tools run by kas see the tree at $KAS_WORKDIR.
 if [ "${KAS_EXEC:-kas-container}" = kas ]; then export AGL_WORKDIR="$TREE"; else export AGL_WORKDIR=/work; fi
 kas_run() {
+  case "${AGL_MIRROR_URL:-}" in ""|http://*|https://*) ;; *) echo "kas_run: AGL_MIRROR_URL must be an http(s) URL: $AGL_MIRROR_URL" >&2; return 1 ;; esac
+  [ -z "${AGL_MIRROR_URL:-}" ] || export AGL_MIRROR_URL="${AGL_MIRROR_URL%/}"
   if [ "${KAS_EXEC:-kas-container}" = kas ]; then
     (cd "$TREE" && KAS_WORK_DIR="$TREE" kas "$@")
   else
@@ -146,6 +151,9 @@ kas_extra_includes() {
     printf ':kas/local/sstate-shared.yml'
   fi
   kas_dl_include
+  if [ -n "${AGL_MIRROR_URL:-}" ]; then
+    printf ':kas/local/mirrors.yml'
+  fi
 }
 
 # Only the shared downloads. For configs that must not write into the shared sstate (yocto-check-layer).
@@ -216,6 +224,9 @@ kas_runtime_args() {
     mkdir -p "${AGL_DL_DIR}"
     printf -- '--runtime-args -v --runtime-args %s:%s --runtime-args -e --runtime-args AGL_DL_DIR=%s ' \
       "${AGL_DL_DIR}" "${AGL_DL_DIR}" "${AGL_DL_DIR}"
+  fi
+  if [ -n "${AGL_MIRROR_URL:-}" ]; then   # a URL: forwarded, not mounted
+    printf -- '--runtime-args -e --runtime-args AGL_MIRROR_URL=%s ' "${AGL_MIRROR_URL}"
   fi
   if [ -n "${AGL_SITE_CONF:-}" ]; then
     printf -- '--runtime-args -v --runtime-args %s:/work/build/conf/site.conf:ro ' "${AGL_SITE_CONF}"

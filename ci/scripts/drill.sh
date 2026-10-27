@@ -22,6 +22,9 @@ done
 case "$MODE" in fetchall|build) ;; *) echo "drill.sh: --mode must be fetchall or build" >&2; exit 2 ;; esac
 parse_common_args "${args[@]}"
 
+# The offline drill proves the local cache; with the network off a mirror URL could only produce misses.
+unset AGL_MIRROR_URL
+
 matrix_fields kasfiles,target
 KASFILES="${_MATRIX_FIELDS[0]}$(kas_extra_includes)$(kas_ci_includes):build/ci-kas/ci-offline.yml"
 TARGET="${_MATRIX_FIELDS[1]}"
