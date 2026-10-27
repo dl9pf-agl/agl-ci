@@ -93,11 +93,22 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
   returns `{'alive': True}`.
 - Updating: run `./build-and-run.sh` again. It builds, stops and removes the container of the previous run and starts a
   new one on the same volume. Old setups started with an anonymous volume are migrated by the same script (asks once).
-- Wiring into the builds is **not done yet** (open item M13b, chapter 15): the trial keeps the local `auto` server with
-  its database in the shared sstate directory. Planned: an env-driven fragment in agl-ucb (`BB_HASHSERVE` for trusted
-  builds, `auto` + `BB_HASHSERVE_UPSTREAM` for PR builds) selected by the runner pool. It has to be tested with real
-  bitbake: the existing `sstate-shared.yml` shows that a variable from the OS environment must be captured with `:=`
-  before it is used in another assignment.
+- **Wiring into the builds (M13b)**, off by default: nothing changes until a host is given an address. Two optional
+  fragments in agl-ucb (`kas/local/hashserv-rw.yml`, `hashserv-upstream.yml`), included by the engine from the environment
+  and chosen by the pool of the host (chapter 05):
+
+  | Pool | Kit variable on the host | Engine variable | Effect in the build |
+  |---|---|---|---|
+  | trusted | `HASHSERV_RW=host:9393` | `AGL_HASHSERV_RW` | `BB_HASHSERVE="host:9393"`: reads and writes the shared server |
+  | untrusted | `HASHSERV_UPSTREAM=host:9494` | `AGL_HASHSERV_UPSTREAM` | `BB_HASHSERVE="auto"`, `BB_HASHSERVE_UPSTREAM="host:9494"`: private local server, reads the shared read-only one |
+
+  Safety rules built in: `deploy.sh` refuses `HASHSERV_RW` on an untrusted host and `HASHSERV_UPSTREAM` on a trusted one; the
+  engine accepts only `host:port` (the value ends up in bitbake configuration) and refuses both variables together;
+  the fill (`fetch.sh`) and the offline drill unset both. The address must be reachable from inside the build containers
+  and the read-write port must not be reachable from untrusted hosts (bind it as described above). Tested with bitbake 2.18
+  against local `bitbake-hashserv` instances: the first fragment sends the build's lookups to the server (11 requests
+  counted by the server for `bitbake -S none zlib-native`), the second makes bitbake start the local server with the given
+  upstream and the upstream receives the lookups (1 to 14). Not tested: a full build, and the container on the build host.
 
 ## Roll-out
 1. Now: trial as in chapter 05. Local `auto` server, database in the shared sstate directory, every slot read-write.
