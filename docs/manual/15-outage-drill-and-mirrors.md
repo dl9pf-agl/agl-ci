@@ -156,10 +156,19 @@ web host, pruning and monitoring (M11), git mirrors (M6), the other layer repos 
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
-filesystem keeps access times first). dl: keep the files that the pins of the last N releases and the current nightly
-need (compare with the `fetchall` list), delete the rest. Artifacts follow the retention of the artifact chapter
+filesystem keeps access times first). dl: never pruned (decision 2026-10-28): the downloads are the premirror for rebuilding old
+builds during an outage, and they grow slowly; what grows is sstate and the binary releases. Artifacts follow the retention of the artifact chapter
 (PR: while open and 14 days after close or merge, nightly 8 days, release forever). Alert at 80 and 90 percent; the
 size report belongs in the job summary.
+
+`kit/prune-cache.sh` is the tool for sstate (of the cache, and of a mirror tree): `sudo kit/prune-cache.sh` is a dry run that says
+how many files and GiB have not been used for 60 days; `--apply` deletes them. It never touches `hashserv.db*` or `LAST_SYNC`,
+never a file changed in the last day, never follows a symlink, and removes empty directories. **It does not prune `dl/` and has no
+option for it.** It uses access times and refuses to run on a `noatime` mount (`--mtime` is the explicit alternative; `relatime`,
+the default, refreshes an access time at most once a day, which is enough). Pruning by age is safe for the hash equivalence
+database: an old equivalence that points at a deleted object costs one rebuild. Binary releases are not pruned by it; their
+retention is the artifact retention above. Tested on a fake tree (old, recent, read-only-recently, symlinked and protected
+files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so start with the dry run and look at the numbers.
 
 ## Open items (keep current)
 | ID | Item | Status |
@@ -174,7 +183,7 @@ size report belongs in the job summary.
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
-| M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | open |
+| M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | sstate pruning script `kit/prune-cache.sh` written and tested on a fake tree (dry run by default; `dl/` is never pruned); quotas, alerts, backups, release retention open |
 | M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part and routing in `layer-ci.yml` done (`POOL`, chapter 05; chapter 13); an untrusted host to be provisioned and fork pull requests to be tested on it (user, then me) |
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
 | M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
