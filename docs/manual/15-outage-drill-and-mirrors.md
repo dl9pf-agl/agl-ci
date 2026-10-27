@@ -41,8 +41,17 @@ job then runs `drill.sh` instead of `validate.sh` and `build.sh`. For a `pull_re
 request must not replace validate and build by a drill and still get a green `result`). By hand on the runner host,
 inside a tree: `AGL_TREE=... KAS_EXEC=kas CI=true ci/scripts/drill.sh ...`.
 
-Optional hardening: add `BB_FETCH_PREMIRRORONLY = "1"` to the offline fragment (V: only PREMIRRORS are searched) to test
-the mirrors alone, ignoring the upstream URL of every recipe.
+**Drill from the mirror alone (tier T2).** `drill.sh --mode mirror` (sources only, minutes) and `--mode mirror-build` (the
+whole build, sstate from the mirror too) prove that a clean rebuild on a new builder works with upstream gone. They run with
+an EMPTY private download and sstate directory (`build/drill-cache` in the workspace, so nothing of the shared cache can help),
+`AGL_MIRROR_URL` required, and `BB_ALLOWED_NETWORKS` set to the host of the mirror (V, `fetch2`: any other host is an untrusted URL
+and the fetch fails; the port is ignored). The network stays on because the mirror is reached over it. `BB_FETCH_PREMIRRORONLY`
+looks like the obvious choice but is wrong here: tested, a `gitsm://` recipe (p11-kit) cannot fetch its submodules from the mirror
+with it (bitbake disables the network for the submodule fetch, mirror included). A source that is not on the mirror fails with
+"Fetcher failure", which the drill lists in `misses.txt` like the offline drill. From GitHub: the
+reusable workflow takes `mode: drill-mirror`; the mirror comes from the repository variable `AGL_MIRROR_URL` (maintainers only;
+deliberately not an input of the dispatch), and the callers must offer the value in their `workflow_dispatch` choice. By hand
+or on a desk: `AGL_MIRROR_URL=http://host:8080 ci/scripts/drill.sh --machine M --features F --target T --mode mirror`.
 
 ## First drill results (2026-10-26, meta-agl, qemux86-64)
 - `agl-image-minimal` (warm cache): every recipe source comes from DL_DIR offline. One miss: the **uninative tarball**.
