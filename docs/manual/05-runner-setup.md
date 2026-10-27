@@ -41,7 +41,8 @@ root-owned snapshot of a reviewed commit; the cost is one `install` line. Altern
 straight from the checkout, which makes every `git pull` an instant root-code change.
 
 ## Shared cache (trial)
-`deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`, owner uid 1001 = runner user) with `sstate/` and `dl/`.
+`deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
+belong to uid 1001 (see "Host requirements": that is the runner user inside the image, not an account of the host).
 `run-loop.sh` bind-mounts it at the same path into the DinD sidecar and the runner container and exports
 `AGL_SSTATE_DIR=$CACHE_DIR/sstate`, `AGL_DL_DIR=$CACHE_DIR/dl`; the engine turns them into the kas fragments
 `sstate-shared.yml` and `dl-shared.yml` (chapter 13). The sidecar needs the mount too, because `kas-container` runs
@@ -75,10 +76,26 @@ an emptied `CACHE_DIR`. `layer-ci.yml` sends fork pull requests to `agl-fork` an
 an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
 first, then pin the callers to the `layer-ci.yml` that routes.
 
+## Host requirements and what the kit does not assume
+- **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
+  root or `sudo`; a rootful Docker (rootless Docker and Podman are untested); network access to GitHub and GHCR; a file system
+  for `CACHE_DIR` that supports Unix owners and modes (not a root-squashed NFS); for QEMU boot tests `/dev/kvm` that any user
+  can open (the default on systemd distributions). On hosts with SELinux enforcing the bind mounts would need `:z`; not done.
+- **Not needed and not assumed:** any particular user or uid on the host. The runner runs as uid 1001 *inside* the signed image;
+  no account with that uid has to exist on the host, and an account that happens to have it (or any other uid) gains nothing.
+  Reason: Docker does not remap uids, so the numeric owner of the two mounted cache folders is all that connects the container to
+  the host. The parent folder `CACHE_DIR` is `root:root 0700`, so no host account can walk into it, and the Docker daemon (root)
+  mounts the two folders without walking through the parent. Look into the cache with `sudo`. The per-job workspace is a Docker
+  volume under `/var/lib/docker`, which is root-only too.
+- **Not hard-coded:** the token file (`deploy.sh` reuses the token of the previous deploy, so `kit/update.sh` needs no path),
+  the organisation (`GH_ORG`), the checkout location, the cache location (`CACHE_DIR`).
+- **Check on a new host:** `sudo -u nobody ls /srv/agl-cache` must say `Permission denied`, and a job must still build.
+
 ## Runbook: setup, daily use, reset
 Everything below is run on the host, as a user with `sudo`, from a checkout of this repo (`git clone
 https://github.com/dl9pf-agl/agl-ci`; commands are relative to it). `<token-file>` is a file with the org token (fine-grained
-PAT, *Self-hosted runners: Read and write*); the kit never prints it and keeps it only in `/etc/agl-runner/runner.env` (0600).
+PAT, *Self-hosted runners: Read and write*); the kit never prints it and keeps it only in `/etc/agl-runner/runner.env` (0600). It
+is needed once per host (and after a complete re-setup); later `kit/update.sh` reuses the stored token.
 
 ### Where things live
 | What | Where |
@@ -86,7 +103,7 @@ PAT, *Self-hosted runners: Read and write*); the kit never prints it and keeps i
 | Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR RUNNER_IMAGE DIND_IMAGE` (`SLOTS` is not stored: it comes from the environment of the deploy) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
-| Cache | `CACHE_DIR` (default `/srv/agl-cache`, owner uid 1001): `sstate/`, `dl/` |
+| Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
 | Mirror web server (trusted host) | container `agl-mirror`, files in `kit/mirror/` |
 | Logs | `journalctl -fu agl-runner@N`; `docker logs agl-mirror` |
 
@@ -113,13 +130,13 @@ Untrusted host:
   expected `POOL`, `LABELS`, `CACHE_DIR`.
 - Org Settings > Actions > Runners: one idle runner per slot, labels `self-hosted Linux X64` plus the pool label.
 - Trusted host: `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/dl/` prints `403` (listing off), a real file
-  under `$CACHE_DIR/dl` prints `200`.
+  under `$CACHE_DIR/dl` prints `200` (list the folder with `sudo`: it is root-only on the host).
 - A real job: a pull request or `workflow_dispatch` of the caller; first build on an empty cache is cold (hours), the next one warm (about 25 minutes).
 
 ### Daily use
 | Task | Command |
 |---|---|
-| Update the host to the current `main` | `./kit/update.sh [token-file]` (git pull, deploy, restart all slots; `POOL`, `MIRROR_URL` are kept; `SLOTS=n` to change the number) |
+| Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL` are kept; `SLOTS=n` to change the number; a token file argument replaces the stored token) |
 | Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled) |
 | New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
 | Change limits | `MEM_LIMIT=32g CPU_LIMIT=12 ./kit/update.sh` |
@@ -173,6 +190,7 @@ A restart kills the job in progress (the first pilot build died this way). Check
 | `sidecar agl-dN never answered` | Docker daemon or `docker:dind` image problem | `docker logs agl-dN`; reset 2; the loop backs off up to 10 minutes |
 | Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr` | set up the missing role; check `LABELS` |
 | Runner offline entries pile up | crashes | reset 3 |
+| `Permission denied` for your own account on `/srv/agl-cache` | intended: the folder is `root:root 0700` | use `sudo` |
 | `df` full | cache or Docker data | cache size 50-150 GB; `docker system df`; reset 2 and 4 |
 | Offline drill finds misses | cache cold or never fetched | chapter 15: fetch mode, then drill |
 
