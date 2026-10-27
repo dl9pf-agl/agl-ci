@@ -88,8 +88,28 @@ first, then pin the callers to the `layer-ci.yml` that routes.
   mounts the two folders without walking through the parent. Look into the cache with `sudo`. The per-job workspace is a Docker
   volume under `/var/lib/docker`, which is root-only too.
 - **Not hard-coded:** the token file (`deploy.sh` reuses the token of the previous deploy, so `kit/update.sh` needs no path),
-  the organisation (`GH_ORG`), the checkout location, the cache location (`CACHE_DIR`).
+  the organisation (`GH_ORG`), the checkout location, the cache location (`CACHE_DIR`), the number of slots (`SLOTS`) and the
+  limits. A host with its own values keeps them across updates; the environment of a deploy overrides them.
+- **Where the space goes:** two places grow, both on the file system that holds them. `CACHE_DIR` (50-150 GB, see "Shared cache")
+  and Docker's data root (default `/var/lib/docker`), which holds the per-job workspace volume with the whole build tree and
+  the images of the sidecar. A Yocto build tree is large (measure it after the first build with `docker system df`); plan
+  tens of GB per slot, and fewer slots on a small disk. On a host whose big disk is not `/`, move both before the first
+  deploy, see "Storage on another file system".
 - **Check on a new host:** `sudo -u nobody ls /srv/agl-cache` must say `Permission denied`, and a job must still build.
+
+### Storage on another file system
+Example: `/` is small and the big disk is mounted at `/home`. Put the cache and Docker's data root there, as root, before the
+first deploy (nothing to move yet):
+```
+sudo systemctl stop docker docker.socket 2>/dev/null || true
+sudo install -d -m 0710 -o root -g root /home/docker
+printf '{ "data-root": "/home/docker" }\n' | sudo tee /etc/docker/daemon.json     # merge by hand if the file exists
+sudo systemctl start docker
+docker info --format '{{.DockerRootDir}}'                                          # must print /home/docker
+sudo CACHE_DIR=/home/agl-cache SLOTS=1 ./kit/deploy.sh <token-file>
+```
+`CACHE_DIR` is stored, so later `kit/update.sh` keeps it. If Docker already holds data, stop it and `rsync -a
+/var/lib/docker/ /home/docker/` before starting it again. `/home/docker` must stay `root`-only like `/var/lib/docker`.
 
 ## Runbook: setup, daily use, reset
 Everything below is run on the host, as a user with `sudo`, from a checkout of this repo (`git clone
@@ -100,7 +120,7 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Where things live
 | What | Where |
 |---|---|
-| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR RUNNER_IMAGE DIND_IMAGE` (`SLOTS` is not stored: it comes from the environment of the deploy) |
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
@@ -136,7 +156,7 @@ Untrusted host:
 ### Daily use
 | Task | Command |
 |---|---|
-| Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL` are kept; `SLOTS=n` to change the number; a token file argument replaces the stored token) |
+| Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL`, `CACHE_DIR`, `SLOTS` and limits are kept; a host from before this change gets 2 slots; give a variable to change it, a token file argument replaces the stored token) |
 | Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled) |
 | New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
 | Change limits | `MEM_LIMIT=32g CPU_LIMIT=12 ./kit/update.sh` |

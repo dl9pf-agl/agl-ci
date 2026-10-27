@@ -12,10 +12,14 @@
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
+# Settings stay as deployed before unless given, so that a plain update does not reset a host with its own paths or sizes.
+for v in GH_ORG ENGINE MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS; do
+  [ -n "${!v:-}" ] || { val="$(old "$v")"; [ -z "$val" ] || printf -v "$v" '%s' "$val"; }
+done
 ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"
 
 # --- token: file argument, else env GH_TOKEN, else the token of the previous deploy, else a prompt
-old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
 if [ -n "${1:-}" ]; then GH_TOKEN="$(tr -d '[:space:]' < "$1")"
 elif [ -z "${GH_TOKEN:-}" ]; then GH_TOKEN="$(old GH_TOKEN)"; fi
 if [ -z "${GH_TOKEN:-}" ]; then read -rsp "GitHub token for org $ORG: " GH_TOKEN; echo; fi
@@ -40,7 +44,7 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOK
 [ "$code" = 200 ] || { echo "token check failed (HTTP $code): needs org $ORG 'Self-hosted runners: read/write' (or admin:org)" >&2; exit 1; }
 
 # --- config (token stays root-only on the host)
-# POOL and MIRROR_URL stay as deployed before unless given, so that a plain update does not undo them
+# POOL and MIRROR_URL stay as deployed before unless given (LABELS too, while the pool stays the same)
 prev_pool="$(old POOL)"; [ -n "$prev_pool" ] || [ ! -f /etc/agl-runner/runner.env ] || prev_pool=trusted   # hosts from before pools are trusted
 POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"
 case "$POOL" in
@@ -51,6 +55,7 @@ esac
 if [ -n "$prev_pool" ] && [ "$prev_pool" != "$POOL" ] && [ -z "${FORCE_POOL_CHANGE:-}" ]; then
   echo "this host is $prev_pool; a host never serves both pools. Set FORCE_POOL_CHANGE=1 to move it (and empty its CACHE_DIR)" >&2; exit 1
 fi
+[ "$prev_pool" != "$POOL" ] || LABELS="${LABELS:-$(old LABELS)}"
 install -d -m 0755 /opt/agl-runner
 install -d -m 0700 /etc/agl-runner
 umask 077
@@ -66,6 +71,7 @@ MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
 DIND=${DIND:-1}
 CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
+SLOTS=$SLOTS
 EOF
 umask 022
 # Cache layout, independent of the accounts on this host: the parent is root-only, so no other account (whatever its
