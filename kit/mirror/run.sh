@@ -5,6 +5,7 @@
 #   kit/mirror/run.sh        env: CACHE_DIR (/srv/agl-cache) PORT (8080) ENGINE (docker) MIRROR_NETWORK (default bridge)
 #                            MIRROR_IMAGE (pinned below; bump by PR)
 set -euo pipefail
+[ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"   # CACHE_DIR is root-only on the host
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 CACHE_DIR="${CACHE_DIR:-/srv/agl-cache}"; PORT="${PORT:-8080}"; E="${ENGINE:-docker}"
 IMAGE="${MIRROR_IMAGE:-docker.io/nginxinc/nginx-unprivileged:stable-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03}"

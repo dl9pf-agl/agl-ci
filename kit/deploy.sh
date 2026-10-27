@@ -14,9 +14,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"
 
-# --- token
+# --- token: file argument, else env GH_TOKEN, else the token of the previous deploy, else a prompt
+old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
 if [ -n "${1:-}" ]; then GH_TOKEN="$(tr -d '[:space:]' < "$1")"
-elif [ -z "${GH_TOKEN:-}" ]; then read -rsp "GitHub token for org $ORG: " GH_TOKEN; echo; fi
+elif [ -z "${GH_TOKEN:-}" ]; then GH_TOKEN="$(old GH_TOKEN)"; fi
+if [ -z "${GH_TOKEN:-}" ]; then read -rsp "GitHub token for org $ORG: " GH_TOKEN; echo; fi
 [ -n "$GH_TOKEN" ] || { echo "no token" >&2; exit 1; }
 
 # --- host packages + container engine (docker preferred, podman accepted, else install docker)
@@ -39,7 +41,6 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOK
 
 # --- config (token stays root-only on the host)
 # POOL and MIRROR_URL stay as deployed before unless given, so that a plain update does not undo them
-old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
 prev_pool="$(old POOL)"; [ -n "$prev_pool" ] || [ ! -f /etc/agl-runner/runner.env ] || prev_pool=trusted   # hosts from before pools are trusted
 POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"
 case "$POOL" in
@@ -67,7 +68,12 @@ DIND=${DIND:-1}
 CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
 EOF
 umask 022
-install -d -o 1001 -g 1001 -m 0755 "${CACHE_DIR:-/srv/agl-cache}" "${CACHE_DIR:-/srv/agl-cache}/sstate" "${CACHE_DIR:-/srv/agl-cache}/dl"   # 1001 = runner user
+# Cache layout, independent of the accounts on this host: the parent is root-only, so no other account (whatever its
+# uid) can walk in; the two folders that the containers mount belong to uid 1001, which is the runner user INSIDE the
+# image and needs no account on the host. The Docker daemon mounts them as root and never walks through the parent.
+cache="${CACHE_DIR:-/srv/agl-cache}"
+install -d -o root -g root -m 0700 "$cache"
+install -d -o 1001 -g 1001 -m 0755 "$cache/sstate" "$cache/dl"
 install -m 0755 "$here/run-loop.sh" /opt/agl-runner/run-loop.sh
 install -m 0644 "$here/agl-runner@.service" /etc/systemd/system/agl-runner@.service
 
