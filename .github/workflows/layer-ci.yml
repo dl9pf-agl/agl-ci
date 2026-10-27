@@ -21,7 +21,7 @@ on:
         type: string
         default: kas-container
       mode:
-        description: 'build (validate + build) | drill (outage drill, network off) | fetch (fill the download cache); chapter 15'
+        description: 'build (validate + build) | drill (outage drill, network off) | drill-mirror (fetch from the mirror alone) | fetch (fill the download cache); chapter 15'
         type: string
         default: build
 
@@ -88,7 +88,7 @@ jobs:
           [ "$EVENT" != pull_request ] || tier=push-pr
           # same for the mode: a pull request must not swap validate + build for a drill and still get a green result
           mode="$MODE_IN"; [ "$EVENT" != pull_request ] || mode=build
-          case "$mode" in build|drill|fetch) ;; *) echo "mode must be build, drill or fetch" >&2; exit 1 ;; esac
+          case "$mode" in build|drill|drill-mirror|fetch) ;; *) echo "mode must be build, drill, drill-mirror or fetch" >&2; exit 1 ;; esac
           # Pool: a pull request from another repo (or from a deleted one) runs on an untrusted host, everything else on a trusted
           # one. Decided here from the event, never from the caller's inputs. See docs/manual/05-runner-setup.md, Pools.
           pool=agl-pr; [ "$EVENT" != pull_request ] || [ "$HEAD_REPO" = "$THIS_REPO" ] || pool=agl-fork
@@ -153,12 +153,15 @@ jobs:
       - name: layers
         run: agl-ci/ci/scripts/checkout.sh
       - name: drill
-        if: needs.matrix.outputs.mode == 'drill'
+        if: needs.matrix.outputs.mode == 'drill' || needs.matrix.outputs.mode == 'drill-mirror'
         env:
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}
-        run: agl-ci/ci/scripts/drill.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
+          DRILL_MODE: ${{ needs.matrix.outputs.mode == 'drill-mirror' && 'mirror' || 'fetchall' }}
+          # the mirror to test is a repository variable that only maintainers can set, not an input of the dispatch
+          AGL_MIRROR_URL: ${{ vars.AGL_MIRROR_URL }}
+        run: agl-ci/ci/scripts/drill.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --mode "$DRILL_MODE"
       - name: fetch
         if: needs.matrix.outputs.mode == 'fetch'
         env:
