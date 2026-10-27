@@ -129,10 +129,29 @@ mounts `$CACHE_DIR/dl` and `$CACHE_DIR/sstate` read-only (enforced by the kernel
 tarballs, `git2_*.tar.gz`, `uninative/<sha256>/...`, sstate objects and their `.siginfo`, range requests (`wget
 --continue`) and `HEAD`. Not served (404): `*.lock`, `*.tmp`, `*.done`, `hashserv.db*`, the `git2/` clone directories
 and dotfiles; directory listings are off (403) and every method except `GET` and `HEAD` returns 405. Tested with a fake
-cache tree on 2026-10-26. Start: `kit/mirror/run.sh` (env `CACHE_DIR`, `PORT`, default 8080). TLS is not in the container
-yet: terminate it in front, or add a `listen 8443 ssl` server block with a mounted certificate; until then a consumer
-reaches the mirror over plain HTTP, which is fine for the checksummed downloads and the weak point for sstate (no
-integrity check), so use it on a network you control. Any other web server works if it follows the same rules (Apache:
+cache tree on 2026-10-26. Start: `kit/mirror/run.sh` (env `CACHE_DIR`, `PORT`, default 8080). Transport has three modes:
+(1) **Plain HTTP, the default** and what the development and test setup uses: no TLS variable, nothing changes. Fine for the
+checksummed downloads, the weak point for sstate (no integrity check) and for the unpinned `branch:` layers, so only on a
+network you control.
+(2) **Production: a separate nginx with an HTTPS terminator in front** (decided 2026-10-28; set up outside this kit). The rule
+set of the mirror is one file, `kit/mirror/locations.conf`, which that nginx can include so that it serves exactly what this
+container serves.
+(3) **Optional: this container terminates TLS.** `TLS_CERT=/path/fullchain.pem TLS_KEY=/path/privkey.pem kit/mirror/run.sh` also
+serves HTTPS on port 8443 (`TLS_PORT`; TLSv1.2 and 1.3 only) with the same rules. With a Let's Encrypt certificate use
+`kit/mirror/certbot.sh`: `TLS_NAME=mirror.example.org LE_EMAIL=ops@example.org kit/mirror/certbot.sh issue` once (try
+`LE_STAGING=1` first), then `TLS_NAME=mirror.example.org kit/mirror/certbot.sh renew` daily from cron. It runs the official
+certbot container (pinned by digest; read-only root file system, no capabilities except binding port 80, sees only
+`/etc/agl-runner/letsencrypt`), HTTP-01 on port 80, which must be reachable from the internet and resolve to this host; `renew`
+asks Let's Encrypt only within 30 days of expiry and restarts the mirror only when the certificate changed. The nginx container
+user (uid 101) cannot read a key that only root may read, so `run.sh` keeps a copy readable by that uid only in the root-only
+folder `/etc/agl-runner/mirror-tls` (`TLS_COPY_DIR`); `certbot.sh` refreshes it through `run.sh`. A consumer then uses
+`AGL_MIRROR_URL=https://mirror.example.org:8443`.
+Tested: with a self-signed certificate HTTPS and HTTP return the same results, TLS 1.1 is refused, a key readable only by its
+owner fails without the copy; `certbot.sh` argument checks, the certbot command line, the restart with the new certificate, no
+restart when unchanged and a restart when changed, with a shim in place of the certbot container and a real nginx; the real
+certbot image runs with the container flags on an empty state directory. Not tested: an actual issuance or renewal at Let's
+Encrypt (needs a public name and port 80), DNS-01, the whole chain in production.
+Any other web server works if it follows the same rules (Apache:
 `Alias` plus `Require method GET HEAD` and `FilesMatch` denies). The sstate directory has one folder per tune
 (`sstate/corei7-64/...`); the consumer URL in M4 must contain `${DEFAULTTUNE}`. Hash equivalence: read-write port only
 for the trusted pool, read-only port public (chapter 14).
@@ -244,7 +263,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 ## Open items (keep current)
 | ID | Item | Status |
 |---|---|---|
-| M1 | Web server: /dl and /sstate done (nginx container, `kit/mirror`, read-only; start it on the host: user); TLS, /artifacts and the write path open | partly done |
+| M1 | Web server: /dl, /sstate and /git done (nginx container, `kit/mirror`, read-only; start it on the host: user); TLS optional (plain HTTP by default; production plans a separate HTTPS terminator; `certbot.sh` for Let's Encrypt, issuance untested); /artifacts and the write path open | partly done |
 | M2 | `publish-artifacts.sh` copying a whitelist plus manifest to `ARTIFACT_DEST=dir:`; staging, published, rejected trees; routing by pool | open |
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | read-only rsync daemon container (`kit/mirror/rsyncd.sh`) and pull script (`kit/mirror/pull-sync.sh`) written and tested locally; only needed once the download server is another machine (user: private network, start the daemon, cron) |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | fragment and engine wiring done (agl-ucb first, then agl-ci); proof by the drill from the mirror alone (step 7) pending |
