@@ -8,7 +8,9 @@
 #               push, release (label agl-pr); untrusted = fork PRs (label agl-fork). SLOTS = number of slots on this host.
 #               MIRROR_URL (untrusted hosts): where the trusted mirror is read, e.g. https://mirror.example/
 #               LABELS (default by POOL) MEM_LIMIT CPU_LIMIT CACHE_DIR (default /srv/agl-cache)
-#               POOL and MIRROR_URL default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
+#               HASHSERV_RW (trusted hosts) = host:port of the shared read-write hash server; HASHSERV_UPSTREAM (untrusted hosts) =
+#               host:port of the shared READ-ONLY one (agl-ci chapter 14). Both optional; an untrusted host never gets HASHSERV_RW.
+#               POOL, MIRROR_URL and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -56,6 +58,12 @@ if [ -n "$prev_pool" ] && [ "$prev_pool" != "$POOL" ] && [ -z "${FORCE_POOL_CHAN
   echo "this host is $prev_pool; a host never serves both pools. Set FORCE_POOL_CHANGE=1 to move it (and empty its CACHE_DIR)" >&2; exit 1
 fi
 [ "$prev_pool" != "$POOL" ] || LABELS="${LABELS:-$(old LABELS)}"
+HASHSERV_RW="${HASHSERV_RW-$(old HASHSERV_RW)}"; HASHSERV_UPSTREAM="${HASHSERV_UPSTREAM-$(old HASHSERV_UPSTREAM)}"
+[ "$POOL" != untrusted ] || [ -z "$HASHSERV_RW" ] || { echo "an untrusted host must not get HASHSERV_RW (write access to the shared hash server); use HASHSERV_UPSTREAM" >&2; exit 1; }
+[ "$POOL" != trusted ] || [ -z "$HASHSERV_UPSTREAM" ] || { echo "a trusted host uses HASHSERV_RW, not HASHSERV_UPSTREAM" >&2; exit 1; }
+for v in HASHSERV_RW HASHSERV_UPSTREAM; do
+  [[ -z "${!v}" || "${!v}" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]] || { echo "$v must be host:port, got: ${!v}" >&2; exit 1; }
+done
 install -d -m 0755 /opt/agl-runner
 install -d -m 0700 /etc/agl-runner
 umask 077
@@ -67,6 +75,8 @@ RUNNER_GROUP_ID=1
 LABELS=${LABELS:-$default_labels}
 POOL=$POOL
 MIRROR_URL=$MIRROR_URL
+HASHSERV_RW=$HASHSERV_RW
+HASHSERV_UPSTREAM=$HASHSERV_UPSTREAM
 MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
 DIND=${DIND:-1}

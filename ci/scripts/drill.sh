@@ -27,6 +27,8 @@ done
 case "$MODE" in fetchall|build|mirror|mirror-build) ;; *) echo "drill.sh: --mode must be fetchall, build, mirror or mirror-build" >&2; exit 2 ;; esac
 parse_common_args "${args[@]}"
 
+# a drill must not depend on, or write to, a hash server
+unset AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM
 case "$MODE" in
   mirror|mirror-build)
     [ -n "${AGL_MIRROR_URL:-}" ] || { echo "drill.sh: --mode $MODE needs AGL_MIRROR_URL (http(s) URL of the mirror)" >&2; exit 2; }

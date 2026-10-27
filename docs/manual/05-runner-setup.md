@@ -72,7 +72,8 @@ mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_
 Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
 fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and
 `MIRROR_URL` are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
-an emptied `CACHE_DIR`. `layer-ci.yml` sends fork pull requests to `agl-fork` and everything else to `agl-pr` (chapter 13), so
+an emptied `CACHE_DIR`. The shared hash server is given with `HASHSERV_RW=host:9393` (trusted hosts) or
+`HASHSERV_UPSTREAM=host:9494` (untrusted hosts); `deploy.sh` refuses the wrong one for the pool (chapter 14). `layer-ci.yml` sends fork pull requests to `agl-fork` and everything else to `agl-pr` (chapter 13), so
 an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
 first, then pin the callers to the `layer-ci.yml` that routes.
 

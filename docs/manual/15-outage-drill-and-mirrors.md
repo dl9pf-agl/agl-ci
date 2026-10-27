@@ -276,7 +276,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 | M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | sstate pruning script `kit/prune-cache.sh` written and tested on a fake tree (dry run by default; `dl/` is never pruned); quotas, alerts, backups, release retention open |
 | M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part and routing in `layer-ci.yml` done (`POOL`, chapter 05; chapter 13); an untrusted host to be provisioned and fork pull requests to be tested on it (user, then me) |
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
-| M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
+| M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | wiring done and tested against a local hash server (chapter 14); switched on by `HASHSERV_RW` / `HASHSERV_UPSTREAM` once the container (M13a) runs on the host |
 | M14 | Input mirror for image rebuild inputs | low |
 | M15 | Unverified claims to test: ~~kas with a present pinned commit and no network~~ (verified 2026-10-27: no remote contact); `own-mirrors` conversion; sstate prune without access times; `cosign verify --local-image` on a skopeo-made archive | open |
 | M16 | Off-site second copy of releases for T2 and T3 | decide later |

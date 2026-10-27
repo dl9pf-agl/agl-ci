@@ -31,6 +31,9 @@
 #   AGL_GIT_MIRROR   - set to 1 (needs AGL_MIRROR_URL): kas clones the layers from $AGL_MIRROR_URL/git/<host>/<path> instead of the
 #                       original URL (KAS_PREMIRRORS). Opt-in because kas has no fallback: a mirror that is down or lacks a
 #                       repository fails the checkout (kit/mirror/git-mirrors.sh fills it).
+#   AGL_HASHSERV_RW  - "host:port" of the shared read-write hash equivalence server (kas/local/hashserv-rw.yml). TRUSTED builds only.
+#   AGL_HASHSERV_UPSTREAM - "host:port" of the shared READ-ONLY server (kas/local/hashserv-upstream.yml): the build runs its own
+#                       private local server that reads from it. For untrusted builds. The two are mutually exclusive.
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -62,6 +65,13 @@ mkdir -p "$TREE/build/ci-kas" && cp "$ENGINE/../kas/"*.yml "$TREE/build/ci-kas/"
 # environment (e.g. inside the signed runner image). Tools run by kas see the tree at $KAS_WORKDIR.
 if [ "${KAS_EXEC:-kas-container}" = kas ]; then export AGL_WORKDIR="$TREE"; else export AGL_WORKDIR=/work; fi
 kas_run() {
+  local v
+  for v in AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM; do   # these end up in bitbake configuration: allow only host:port
+    [[ -z "${!v:-}" || "${!v}" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]] || { echo "kas_run: $v must be host:port, got: ${!v}" >&2; return 1; }
+  done
+  if [ -n "${AGL_HASHSERV_RW:-}" ] && [ -n "${AGL_HASHSERV_UPSTREAM:-}" ]; then
+    echo "kas_run: AGL_HASHSERV_RW and AGL_HASHSERV_UPSTREAM are mutually exclusive" >&2; return 1
+  fi
   case "${AGL_MIRROR_URL:-}" in ""|http://*|https://*) ;; *) echo "kas_run: AGL_MIRROR_URL must be an http(s) URL: $AGL_MIRROR_URL" >&2; return 1 ;; esac
   [ -z "${AGL_MIRROR_URL:-}" ] || export AGL_MIRROR_URL="${AGL_MIRROR_URL%/}"
   if [ -n "${AGL_GIT_MIRROR:-}" ]; then
@@ -168,6 +178,12 @@ kas_extra_includes() {
   if [ -n "${AGL_MIRROR_URL:-}" ]; then
     printf ':kas/local/mirrors.yml'
   fi
+  if [ -n "${AGL_HASHSERV_RW:-}" ]; then
+    printf ':kas/local/hashserv-rw.yml'
+  fi
+  if [ -n "${AGL_HASHSERV_UPSTREAM:-}" ]; then
+    printf ':kas/local/hashserv-upstream.yml'
+  fi
 }
 
 # Only the shared downloads. For configs that must not write into the shared sstate (yocto-check-layer).
@@ -241,6 +257,12 @@ kas_runtime_args() {
   fi
   if [ -n "${AGL_MIRROR_URL:-}" ]; then   # a URL: forwarded, not mounted
     printf -- '--runtime-args -e --runtime-args AGL_MIRROR_URL=%s ' "${AGL_MIRROR_URL}"
+  fi
+  if [ -n "${AGL_HASHSERV_RW:-}" ]; then
+    printf -- '--runtime-args -e --runtime-args AGL_HASHSERV_RW=%s ' "${AGL_HASHSERV_RW}"
+  fi
+  if [ -n "${AGL_HASHSERV_UPSTREAM:-}" ]; then
+    printf -- '--runtime-args -e --runtime-args AGL_HASHSERV_UPSTREAM=%s ' "${AGL_HASHSERV_UPSTREAM}"
   fi
   if [ -n "${AGL_SITE_CONF:-}" ]; then
     printf -- '--runtime-args -v --runtime-args %s:/work/build/conf/site.conf:ro ' "${AGL_SITE_CONF}"
