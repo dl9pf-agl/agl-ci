@@ -66,6 +66,12 @@ tarball went to the throw-away `build/downloads` and the build step then found t
 (`kas_dl_include`; sstate stays private to it). The drill skips `validate.sh`, so it is the first run to need the file
 from `DL_DIR`.
 
+The fill (`fetch.sh`) now fails when `DL_DIR/uninative/<sha256>/*.tar.xz` is missing after the run, so a nightly cannot stay green
+with an incomplete mirror. Keep in mind for the release bundle (M17): the tarball belongs to the pin (`UNINATIVE_VERSION` of
+oe-core), so a bundle that must rebuild an old release years later has to carry its `dl/uninative/` folder; `prune-cache.sh`
+never prunes `dl/`. A new `UNINATIVE_VERSION` (an oe-core pin bump) is fetched by the next fill and invalidates the
+native sstate once (a slow nightly, nothing to do).
+
 ## Mirrors in the build path (decided)
 No NFS server (verified in bitbake: `BB_HASHSERVE_DB_DIR` on NFS is fatal, the sqlite file must stay local). Every
 builder keeps its permanent local cache (`CACHE_DIR`, chapter 05) and reads the shared HTTP mirrors; **nightly and
