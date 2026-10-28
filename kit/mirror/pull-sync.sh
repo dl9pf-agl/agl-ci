@@ -11,6 +11,7 @@
 #   MIRROR_ROOT  where the mirror tree lives (default /srv/mirror); the web server serves MIRROR_ROOT/dl, sstate and git.
 #   AREAS        default "dl sstate git". A missing area on a source is skipped with a note (git/ exists only after
 #                git-mirrors.sh ran); dl and sstate missing is an error.
+#   RSYNC_EXTRA  extra rsync options, e.g. "--max-size=200K" to pull only small files for a test (kit/mirror/sync-selftest.sh).
 #   -n           dry run: show what would be copied, change nothing.
 #
 # What it does NOT copy (the daemon refuses them too): *.lock, *.tmp, *.done, hashserv.db*, dotfiles, dl/git2/.
@@ -23,6 +24,7 @@ mirror="${MIRROR_ROOT:-/srv/mirror}"
 sources="${SOURCES:?set SOURCES to the rsync URLs of the trusted build hosts, e.g. \"rsync://10.0.0.5/agl/\"}"
 areas="${AREAS:-dl sstate git}"
 dry=(); [ "${1:-}" != -n ] || dry=(--dry-run)
+read -ra user_opts <<<"${RSYNC_EXTRA:-}"
 common=(-a --ignore-existing --delay-updates --partial --timeout=300 --exclude='*.lock' --exclude='*.tmp' --exclude='*.done' --exclude='hashserv.db*' --exclude='.*')
 for base in $sources; do
   [[ "$base" =~ ^rsync://[][A-Za-z0-9.:-]+/[A-Za-z0-9._-]+/$ ]] || { echo "pull-sync: SOURCES entries must look like rsync://host/module/ : $base" >&2; exit 1; }
@@ -33,7 +35,7 @@ for base in $sources; do
     [ "${#dry[@]}" -gt 0 ] || mkdir -p "$mirror/$area"
     extra=(); [ "$area" != dl ] || extra=(--exclude='/git2/')
     echo "pull-sync: $base$area/ -> $mirror/$area/"
-    rsync "${common[@]}" "${extra[@]}" "${dry[@]}" "$base$area/" "$mirror/$area/"
+    rsync "${common[@]}" "${extra[@]}" "${user_opts[@]}" "${dry[@]}" "$base$area/" "$mirror/$area/"
   done
 done
 [ "${#dry[@]}" -gt 0 ] || date -u +%Y-%m-%dT%H:%M:%SZ > "$mirror/LAST_SYNC"
