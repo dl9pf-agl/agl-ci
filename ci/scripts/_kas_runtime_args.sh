@@ -28,6 +28,9 @@
 #   AGL_MIRROR_URL   - http(s) URL (no trailing slash) of a source and sstate mirror laid out like kit/mirror:
 #                       $URL/dl/ and $URL/sstate/<DEFAULTTUNE>/. Wired in through the kas/local/mirrors.yml fragment
 #                       (PREMIRRORS and SSTATE_MIRRORS) and forwarded into the container; nothing is mounted.
+#   AGL_GIT_MIRROR   - set to 1 (needs AGL_MIRROR_URL): kas clones the layers from $AGL_MIRROR_URL/git/<host>/<path> instead of the
+#                       original URL (KAS_PREMIRRORS). Opt-in because kas has no fallback: a mirror that is down or lacks a
+#                       repository fails the checkout (kit/mirror/git-mirrors.sh fills it).
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -61,6 +64,17 @@ if [ "${KAS_EXEC:-kas-container}" = kas ]; then export AGL_WORKDIR="$TREE"; else
 kas_run() {
   case "${AGL_MIRROR_URL:-}" in ""|http://*|https://*) ;; *) echo "kas_run: AGL_MIRROR_URL must be an http(s) URL: $AGL_MIRROR_URL" >&2; return 1 ;; esac
   [ -z "${AGL_MIRROR_URL:-}" ] || export AGL_MIRROR_URL="${AGL_MIRROR_URL%/}"
+  if [ -n "${AGL_GIT_MIRROR:-}" ]; then
+    [ -n "${AGL_MIRROR_URL:-}" ] || { echo "kas_run: AGL_GIT_MIRROR needs AGL_MIRROR_URL" >&2; return 1; }
+    # First matching line wins; kas-container forwards KAS_PREMIRRORS into the container. The repo under test (AGL_PIN_URL, for a
+    # fork pull request the fork) is not on the mirror and must be cloned from where it is: its line maps it to itself, first.
+    pin_line=""
+    if [ -n "${AGL_PIN_URL:-}" ]; then
+      pin_re="$(printf '%s' "$AGL_PIN_URL" | sed 's/[][\\.*^$+?(){}|/]/\\&/g')"
+      pin_line="^${pin_re}\$ ${AGL_PIN_URL}"$'\n'
+    fi
+    export KAS_PREMIRRORS="${pin_line}^https?://([^/]+)/ ${AGL_MIRROR_URL}/git/\\1/"
+  fi
   if [ "${KAS_EXEC:-kas-container}" = kas ]; then
     (cd "$TREE" && KAS_WORK_DIR="$TREE" kas "$@")
   else
