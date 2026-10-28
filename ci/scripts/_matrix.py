@@ -33,6 +33,7 @@ ci/scripts/validate.sh's yocto-check-layer invocation - see their docstrings bel
 """
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -49,6 +50,67 @@ WORKDIR = os.environ.get("AGL_WORKDIR", "/work")   # where the tree is mounted f
 INCOMPATIBLE_FEATURES = [
     {"agl-kvm", "agl-xen"},  # two hypervisor backends, can't coexist on one image
 ]
+
+
+# A build-matrix.yaml of the repo under test comes from the pull request, so it is untrusted input (a fork can change it). Its values
+# end up in kas file paths, in shell strings of the build job and in artifact paths: accept only plain names, known tiers and a
+# bounded number of entries. Everything here is checked when the matrix is loaded, so the matrix job fails before anything is built.
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+PATH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$")   # relative, no empty or dot-only component
+TIERS = {"push-pr", "nightly", "release", "dispatch"}
+MAX_ENTRIES = 128   # expanded entries of all repos in scope; GitHub allows 256 matrix jobs per workflow run
+
+
+def _bad(repo, what, value):
+    raise ValueError(f"{repo}/ci/build-matrix.yaml: {what} {value!r} is not allowed")
+
+
+def _check_name(repo, what, value):
+    if not isinstance(value, str) or not NAME_RE.match(value) or ".." in value:
+        _bad(repo, what, value)
+
+
+def _check_tiers(repo, what, tiers):
+    if not isinstance(tiers, list) or not set(tiers) <= TIERS:
+        _bad(repo, what, tiers)
+
+
+def _check_repo_data(repo, d):
+    """Reject anything in one repo's matrix file that is not a plain name, a known tier or a bounded size."""
+    _check_name(repo, "repo name", repo)
+    for r in d.get("needs", []):
+        _check_name(repo, "needs entry", r)
+    for m, v in (d.get("machine_eula") or {}).items():
+        _check_name(repo, "machine_eula machine", m)
+        if not isinstance(v, bool):
+            _bad(repo, f"machine_eula value for {m}", v)
+    for img in d.get("images", []):
+        _check_name(repo, "target", img.get("target"))
+        for f in img.get("features", []):
+            _check_name(repo, "feature", f)
+        if not isinstance(img.get("sdk"), bool):
+            _bad(repo, f"sdk of {img.get('target')}", img.get("sdk"))
+        if not isinstance(img.get("tiers"), str):
+            _check_tiers(repo, f"tiers of {img['target']}", img.get("tiers"))
+        if not isinstance(img.get("machines"), str):
+            for m in img.get("machines", []):
+                name = m if isinstance(m, str) else next(iter(m), None)
+                _check_name(repo, "machine", name)
+                if isinstance(m, dict) and "tiers" in (m[name] or {}):
+                    _check_tiers(repo, f"tiers of {img['target']} on {name}", m[name]["tiers"])
+    cl = d.get("check_layers") or {}
+    for key in ("dependency_roots", "default"):
+        for p in cl.get(key, []):
+            if not isinstance(p, str) or not PATH_RE.match(p) or ".." in p.split("/"):
+                _bad(repo, f"check_layers.{key} path", p)
+    for entry in cl.get("layers", []):
+        p = entry if isinstance(entry, str) else next(iter(entry), None)
+        if not isinstance(p, str) or not PATH_RE.match(p) or ".." in p.split("/"):
+            _bad(repo, "check_layers.layers path", p)
+        if isinstance(entry, dict):
+            for a in (entry[p] or {}).get("additional_layers", []):
+                if not isinstance(a, str) or not PATH_RE.match(a) or ".." in a.split("/"):
+                    _bad(repo, "check_layers additional_layers path", a)
 
 
 def _needs_closure(repo, datas):
@@ -68,6 +130,8 @@ def load_matrix():
     scope = os.environ.get("AGL_SCOPE")
     if not datas:
         raise ValueError(f"no */ci/build-matrix.yaml under {TREE}")
+    for r, d in datas.items():
+        _check_repo_data(r, d or {})
     keep = [r for r in datas if not scope or r == scope or scope in _needs_closure(r, datas)]
     merged = {"machine_eula": {}, "images": [], "check_layers": {"dependency_roots": [], "layers": [], "default": []}}
     for repo in keep:
@@ -136,15 +200,20 @@ def expand_entries(data=None):
             )
         for m in machines:
             name, overrides = _name_and_opts(m)
+            tiers_here = overrides.get("tiers", tiers_on.get(name, tiers))
+            if machine_eula.get(name, False) and "push-pr" in tiers_here:
+                raise ValueError(f"{img.get('repo', '')}: target {img['target']!r} on {name!r} needs an EULA and must not be in tier push-pr")
             entries.append({
                 "machine": name,
                 "features": img["features"],
                 "target": img["target"],
                 "sdk": img["sdk"],
                 "eula": machine_eula.get(name, False),
-                "tiers": overrides.get("tiers", tiers_on.get(name, tiers)),
+                "tiers": tiers_here,
                 "repo": img.get("repo", ""),
             })
+    if len(entries) > MAX_ENTRIES:
+        raise ValueError(f"the matrix has {len(entries)} entries, more than the {MAX_ENTRIES} allowed")
     return entries
 
 

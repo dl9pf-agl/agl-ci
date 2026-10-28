@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: scripts/install-lint-tools.sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: python3 -c 'import yaml' 2>/dev/null || { sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends python3-yaml; }   # for ci/scripts/_matrix_test.py
       - name: lint
         env:
           LINT_MODE: ${{ inputs.mode || vars.LINT_MODE || 'enforce' }}

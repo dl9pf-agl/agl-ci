@@ -75,8 +75,21 @@ share, where the job runs and what it may write. For `pull_request` events the w
 The same rule picks the runner pool (chapter 05, "Pools"): the matrix step sets `pool=agl-fork` when the event is a
 `pull_request` whose head repository is not the repository itself (a fork, or a deleted fork, so it fails closed), and
 `pool=agl-pr` for everything else; the build job uses it in `runs-on`. It is decided from the event in the pinned
-workflow, never from a caller input, so a pull request cannot edit its way onto the trusted pool. Fork pull requests
-wait until an `agl-fork` runner (an untrusted host) exists.
+workflow, never from a caller input, so a pull request cannot pick the pool through the inputs of our workflow. **Limit:** a
+fork's workflow file is the fork's own; it does not have to call our workflow and could name the label `agl-pr` in its own
+`runs-on`. Today only the approval policy `all_external_contributors` (a maintainer must approve the run, and must read the
+workflow change) stands in the way; restricting the trusted runners to the reusable workflows of agl-ci is open item M21.
+Fork pull requests wait until an `agl-fork` runner (an untrusted host) exists.
+
+**The matrix file of a pull request is untrusted input** (a fork can change `ci/build-matrix.yaml`). It cannot choose the pool,
+the tier or the mode, but its values reach kas file paths, shell strings of the build job and artifact paths. `_matrix.py`
+therefore checks every repo's file when it loads it and fails the `matrix` job, before anything is built, on: a target, feature,
+machine or repo name that is not a plain name (`[A-Za-z0-9._-]`, no `..`, no leading dash), a tier outside
+`push-pr|nightly|release|dispatch`, a non-boolean `sdk` or EULA flag, a `check_layers` path that is absolute or contains `..`,
+more than 128 expanded entries (GitHub's own limit is 256 matrix jobs), and an entry on a machine that needs an EULA in the tier
+`push-pr` (a pull request never accepts an EULA). `ci/scripts/_matrix_test.py` holds the cases, runs in the lint job, and was
+checked to fail against the code before this change. What a hostile matrix can still do is build chosen images on the pool of its
+trust level, which the pull request's own recipes can do anyway.
 
 ## Reusable workflow
 `.github/workflows/layer-ci.yml` is called by the layer repos, pinned by full SHA. Inputs: `repo` (repo under test, scopes
