@@ -164,6 +164,32 @@ module or forced-command key, filters as above, every few minutes and after the 
 build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
 timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
 
+**How the download server gets the cache (M3).** No account, key or password on either side, and the download server never gets
+a login on a build host. Each trusted build host runs a read-only rsync daemon in a container (`kit/mirror/rsyncd.sh`); the
+download server pulls with `kit/mirror/pull-sync.sh`.
+- Build host: `RSYNCD_BIND=<private address> RSYNCD_ALLOW=<address of the download server> kit/mirror/rsyncd.sh`. Both are required.
+  The port (873, `RSYNCD_PORT`) is published on that one address only, which must be on a private network (physical or VPN);
+  `0.0.0.0` is refused. The container uses the signed builder image of the checkout (it has rsync and is on the host anyway),
+  a read-only root file system, no capabilities except the three the daemon needs to chroot and drop to uid 1001, and
+  read-only mounts of `dl/`, `sstate/` and `git/`. The module is `read only`, refuses `--delete`, and offers neither
+  `*.lock`, `*.tmp`, `*.done`, `hashserv.db*`, dotfiles nor `dl/git2/`. Access control is the network plus `hosts allow`; the
+  transfer is not encrypted, which is why the network must be private. Stop it with `docker rm -f agl-rsyncd`.
+- Download server: `SOURCES="rsync://10.0.0.5/agl/ rsync://10.0.0.6/agl/" MIRROR_ROOT=/srv/mirror kit/mirror/pull-sync.sh [-n]`,
+  from cron, as any user that may write `MIRROR_ROOT`. Per source and per area (`dl`, `sstate`, `git`; `git` only if offered) it
+  runs rsync with `--ignore-existing --delay-updates`, so an existing file is never replaced (the objects are content-addressed,
+  and a damaged copy on a build host cannot overwrite a good one), and writes `MIRROR_ROOT/LAST_SYNC` after a successful run
+  (alert when it gets old). `-n` is a dry run and creates nothing.
+Tested with rsync 3.5 and the pinned builder image on a fake root-only cache tree: the daemon lists only `dl`, `sstate` and
+`git`; excluded names are not retrievable even when asked for by name; writes and `--delete` are refused; the container runs with
+all capabilities dropped but three, and the worker has dropped to uid 1001 (a root-only 0600 file is refused); `hosts allow`
+refuses a client that is not listed and accepts a list or a CIDR; the pull does not replace an existing file, copies new ones,
+skips an area that is not offered and writes `LAST_SYNC`; bad addresses and URLs are refused. Found by that test: an `&include`
+of the allowed address did not take effect in rsync 3.5, so `rsyncd.sh` assembles the config in the container instead. Not
+tested: two hosts and a real private network or VPN, the volume of a real sstate tree, and the container with published ports
+(the test used host networking).
+Decision recorded: the first draft pulled over ssh with an `rrsync` key of root; it was dropped, because a key to a root account
+on a build host is not acceptable even when restricted.
+
 Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (done: fork pull
 requests to `agl-fork`, everything else to `agl-pr`); 4 nginx container on this host (`kit/mirror`, done; TLS open); 5 consumer settings (M4); 6 hashserv wiring
 (M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_FETCH_PREMIRRORONLY`); 8 pull sync to a separate
@@ -191,7 +217,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 |---|---|---|
 | M1 | Web server: /dl and /sstate done (nginx container, `kit/mirror`, read-only; start it on the host: user); TLS, /artifacts and the write path open | partly done |
 | M2 | `publish-artifacts.sh` copying a whitelist plus manifest to `ARTIFACT_DEST=dir:`; staging, published, rejected trees; routing by pool | open |
-| M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | open |
+| M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | read-only rsync daemon container (`kit/mirror/rsyncd.sh`) and pull script (`kit/mirror/pull-sync.sh`) written and tested locally; only needed once the download server is another machine (user: private network, start the daemon, cron) |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | fragment and engine wiring done (agl-ucb first, then agl-ci); proof by the drill from the mirror alone (step 7) pending |
 | M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; the fill job reads no mirror (`fetch.sh` unsets `AGL_MIRROR_URL`); git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
 | M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | open |
