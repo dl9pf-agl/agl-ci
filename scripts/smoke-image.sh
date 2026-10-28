@@ -21,6 +21,10 @@ case "$img" in
     run --entrypoint kas "$ref" --version
     run --entrypoint docker "$ref" --version
     run --entrypoint test "$ref" -x ./run.sh
+    run --entrypoint actionlint "$ref" -version
+    run --entrypoint zizmor "$ref" --version
+    run --entrypoint shellcheck "$ref" --version
+    run --entrypoint python3 "$ref" -c 'import yaml'     # scripts/check-kas.py of agl-ucb needs it
     ;;
   *) echo "builder|runner" >&2; exit 2 ;;
 esac

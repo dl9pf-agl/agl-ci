@@ -14,7 +14,10 @@ if [ "$img" = runner ]; then
   [ -n "$btar" ] || { echo "runner needs the builder OCI tar" >&2; exit 2; }
   d="$(mktemp -d)"; tar -xf "$btar" -C "$d"
   args+=(--build-context "builder=oci-layout://$d@$(jq -r '.manifests[0].digest' "$d/index.json")"
-         --build-arg "RUNNER_VERSION=$RUNNER_VERSION" --build-arg "RUNNER_SHA256=$RUNNER_SHA256")
+         --build-arg "RUNNER_VERSION=$RUNNER_VERSION" --build-arg "RUNNER_SHA256=$RUNNER_SHA256"
+         --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" --build-arg "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
+         --build-arg "ZIZMOR_VERSION=$ZIZMOR_VERSION" --build-arg "ZIZMOR_SHA256=$ZIZMOR_SHA256"
+         --build-arg "SHELLCHECK_VERSION=$SHELLCHECK_VERSION" --build-arg "SHELLCHECK_SHA256=$SHELLCHECK_SHA256")
 fi
 [ -z "${NO_CACHE:-}" ] || args+=(--no-cache)
 docker buildx build "${args[@]}" --output "type=oci,dest=$out,rewrite-timestamp=true" .

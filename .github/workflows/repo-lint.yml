@@ -1,0 +1,51 @@
+name: repo-lint
+# Reusable lint job for the repos around agl-ci (agl-ucb): runs the caller's scripts/lint.sh. Callers pin this file by full SHA.
+# WHERE it runs is decided here, from the event, never by the caller's file (a pull request can edit its own caller):
+#   pull request from this repo             -> [self-hosted, agl-pr]    trusted pool
+#   pull request from a fork / deleted fork -> [self-hosted, agl-fork]  untrusted pool
+#   push, dispatch                          -> [self-hosted, agl-pr]
+# Same rule as layer-ci.yml (docs/manual/05-runner-setup.md, Pools). The one thing a caller may choose is runner: github,
+# which runs everything on a GitHub-hosted runner instead (no self-hosted host involved; installs the tools per run).
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'pool (self-hosted, by trust; default) | github (GitHub-hosted ubuntu-24.04)'
+        type: string
+        default: pool
+
+permissions: {}
+
+concurrency:
+  group: repo-lint-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    # the runner image carries actionlint, zizmor, shellcheck and PyYAML (docker/runner/Dockerfile)
+    runs-on: ${{ fromJSON(inputs.runner == 'github' && '["ubuntu-24.04"]' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '["self-hosted","agl-fork"]' || '["self-hosted","agl-pr"]')) }}
+    permissions: { contents: read }
+    steps:
+      - name: reject an unknown runner value
+        env:
+          RUNNER_IN: ${{ inputs.runner }}
+        run: case "$RUNNER_IN" in pool|github) ;; *) echo "runner must be pool or github" >&2; exit 1 ;; esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      # GitHub-hosted only: that runner has none of the tools. Take them, pinned and sha256-checked, from this workflow's own commit.
+      - if: inputs.runner == 'github'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - if: inputs.runner == 'github'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends python3-yaml
+          agl-ci/scripts/install-lint-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: lint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/lint.sh

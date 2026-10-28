@@ -76,6 +76,15 @@ an emptied `CACHE_DIR`. `layer-ci.yml` sends fork pull requests to `agl-fork` an
 an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
 first, then pin the callers to the `layer-ci.yml` that routes.
 
+**Lint jobs use the pools too.** The reusable `repo-lint.yml` (callers: agl-ucb) routes by the same rule: pull request from the
+repo and push/dispatch to `agl-pr`, pull request from a fork to `agl-fork`; the decision is in the pinned workflow, not in the
+caller. The runner image carries actionlint, zizmor, shellcheck and PyYAML (pinned in `docker/pins.env`, checked by the image
+smoke test), so a lint job downloads nothing. A job waits in the queue until a host of its pool is online and runs the new
+tools only once the hosts run an image built from this change (`kit/update.sh`). A caller may pass `runner: github` to use a
+GitHub-hosted runner instead (it then installs the tools per run). Tested: the image builds locally and the tools and the lint
+script of agl-ucb run in it; actionlint/zizmor/hadolint of the files. Not tested: the images workflow, the `runs-on` expression
+on GitHub, a run on a pool host.
+
 ## Host requirements and what the kit does not assume
 - **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
   root or `sudo`; a rootful Docker (rootless Docker and Podman are untested); network access to GitHub and GHCR; a file system
