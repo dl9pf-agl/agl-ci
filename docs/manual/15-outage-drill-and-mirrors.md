@@ -50,7 +50,14 @@ looks like the obvious choice but is wrong here: tested, a `gitsm://` recipe (p1
 with it (bitbake disables the network for the submodule fetch, mirror included). A source that is not on the mirror fails with
 "Fetcher failure", which the drill lists in `misses.txt` like the offline drill. From GitHub: the
 reusable workflow takes `mode: drill-mirror`; the mirror comes from the repository variable `AGL_MIRROR_URL` (maintainers only;
-deliberately not an input of the dispatch), and the callers must offer the value in their `workflow_dispatch` choice. By hand
+deliberately not an input of the dispatch), and the callers must offer the value in their `workflow_dispatch` choice. The
+variable belongs to the **calling** repo (a reusable workflow reads `vars` of its caller), so set it in every repo that runs the
+drill: Settings > Secrets and variables > Actions > Variables, or `gh variable set AGL_MIRROR_URL -R <org>/<repo> --body <url>`.
+It is the way to test a mirror that is not published yet. Once the production mirror exists its URL is meant to be committed
+as the default in the distro configuration or a kas fragment (a public site for AGL; a member may keep a private one and
+override it), and the variable is no longer needed. A GitHub run log is public in a public repo and shows the host name;
+delete the run afterwards if the host is not meant to be known. Tested through GitHub on 2026-10-28 (trusted pool,
+`agl-image-minimal` on qemux86-64, 4.5 minutes, 0 failures). By hand
 or on a desk: `AGL_MIRROR_URL=http://host:8080 ci/scripts/drill.sh --machine M --features F --target T --mode mirror`.
 
 ## First drill results (2026-10-26, meta-agl, qemux86-64)
