@@ -25,7 +25,23 @@ Each layer repo has `ci/build-matrix.yaml` with only its own images (schema: hea
 `push-pr | nightly | release | dispatch`, per-machine tier overrides). `needs: [<repo>]` declares the dependency chain
 (demo needs meta-agl, devel needs demo). With `AGL_SCOPE=<repo>` a run covers that repo plus every repo that needs it
 (transitively), so a `meta-agl` change also runs the downstream images; a `meta-agl-devel` change runs only devel.
-Without `AGL_SCOPE` all repos in the tree are included (nightly).
+Without `AGL_SCOPE` all repos in the tree are included (nightly). The nightly of `meta-agl` therefore already covers the
+images of demo and devel; their callers have no schedule of their own.
+
+**Shared names (`ci/matrix-defaults.yaml`).** What every repo would repeat lives in agl-ci, next to the engine and pinned with
+it: `machine_sets` (`ci` = qemux86-64, qemuarm64, raspberrypi5, sparrow-hawk) and `tier_presets` (`dispatch`, `nightly`, `gate`
+= pull request gate on qemux86-64 plus nightly on every machine, `nightly-x86`). An image says `machines: ci` and `tiers: gate`
+and lists only what differs (an explicit machine list, an explicit tiers list, or a `{tiers: [...]}` on one machine entry
+override the names). An unknown name is an error. The expansion is identical to the spelled-out form (checked for the demo and
+devel matrices: same 38 entries).
+
+**The caller needs no inputs.** `layer-ci.yml` takes the repo under test from `github.event.repository.name`, and the tier and
+mode of a manual run from the event's own inputs; a caller may still pass `repo`, `tier` and `mode`. A caller is the triggers
+plus one `uses:` line pinned by commit.
+
+**yocto-check-layer.** `validate.sh` checks `meta-agl/meta-agl-core` by default. `check_layers.default` in a repo's matrix adds
+layers to that default for every run in scope. The demo and devel matrices list their layers (so `CHECK_LAYERS=all` and
+`make validate CHECK_LAYERS="..."` can check them) but keep `default: []`: **not active** until the layers pass; see M19.
 
 ## Executing kas
 `KAS_EXEC=kas-container` (default): `kas-container` with `KAS_CONTAINER_IMAGE` (the signed builder, by digest) and

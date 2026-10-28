@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+# Shared names for the build matrices of all layer repos (ci/build-matrix.yaml of meta-agl, meta-agl-demo, meta-agl-devel, ...).
+# They are read by ci/scripts/_matrix.py from the same agl-ci commit as the engine, so a repo that pins agl-ci also pins these.
+# A repo uses them by name and changes only what differs:
+#   machines: ci          instead of a list of machines
+#   tiers: gate           instead of a list of tiers
+# Explicit lists still work, and an explicit `tiers:` on a machine entry overrides the preset (agl-ci chapter 13).
+
+# Machines that CI builds, by name. Other boards stay buildable by hand (`make build`) and are listed explicitly where wanted.
+machine_sets:
+  ci: [qemux86-64, qemuarm64, raspberrypi5, sparrow-hawk]
+
+# Tier presets. `default` applies to every machine of the image; `machine_tiers` overrides single machines.
+#   push-pr = every pull request / push, nightly = nightly schedule, release = tags, dispatch = manual run
+tier_presets:
+  # manual runs only
+  dispatch:
+    default: [dispatch]
+  # every machine nightly, on release and on dispatch
+  nightly:
+    default: [nightly, release, dispatch]
+  # pull request gate: qemux86-64 on every pull request, all machines nightly, on release and on dispatch
+  gate:
+    default: [nightly, release, dispatch]
+    machine_tiers:
+      qemux86-64: [push-pr, nightly, release, dispatch]
+  # manual runs on every machine, and qemux86-64 also nightly and on release
+  nightly-x86:
+    default: [dispatch]
+    machine_tiers:
+      qemux86-64: [nightly, release, dispatch]

@@ -69,7 +69,7 @@ def load_matrix():
     if not datas:
         raise ValueError(f"no */ci/build-matrix.yaml under {TREE}")
     keep = [r for r in datas if not scope or r == scope or scope in _needs_closure(r, datas)]
-    merged = {"machine_eula": {}, "images": [], "check_layers": {"dependency_roots": [], "layers": []}}
+    merged = {"machine_eula": {}, "images": [], "check_layers": {"dependency_roots": [], "layers": [], "default": []}}
     for repo in keep:
         d = datas[repo]
         merged["machine_eula"].update(d.get("machine_eula", {}))
@@ -77,6 +77,7 @@ def load_matrix():
         cl = d.get("check_layers", {})
         merged["check_layers"]["dependency_roots"] += [r for r in cl.get("dependency_roots", []) if r not in merged["check_layers"]["dependency_roots"]]
         merged["check_layers"]["layers"] += cl.get("layers", [])
+        merged["check_layers"]["default"] += [l for l in cl.get("default", []) if l not in merged["check_layers"]["default"]]
     return merged
 
 
@@ -100,18 +101,40 @@ def _name_and_opts(entry):
     return name, opts
 
 
+DEFAULTS_FILE = Path(__file__).resolve().parent.parent / "matrix-defaults.yaml"   # ci/matrix-defaults.yaml, same commit as this script
+
+
+def load_defaults():
+    """The shared machine sets and tier presets (ci/matrix-defaults.yaml)."""
+    d = yaml.safe_load(DEFAULTS_FILE.read_text()) or {}
+    return d.get("machine_sets", {}), d.get("tier_presets", {})
+
+
+def _lookup(table, name, what, target):
+    if name not in table:
+        raise ValueError(f"target {target!r}: unknown {what} {name!r}; known: {sorted(table)} (ci/matrix-defaults.yaml)")
+    return table[name]
+
+
 def expand_entries(data=None):
     data = data if data is not None else load_matrix()
     machine_eula = data.get("machine_eula", {})
+    machine_sets, tier_presets = load_defaults()
     entries = []
     for img in data.get("images", []):
+        machines, tiers, tiers_on = img["machines"], img["tiers"], {}
+        if isinstance(machines, str):      # a name from machine_sets
+            machines = _lookup(machine_sets, machines, "machine set", img["target"])
+        if isinstance(tiers, str):         # a name from tier_presets
+            preset = _lookup(tier_presets, tiers, "tier preset", img["target"])
+            tiers, tiers_on = preset["default"], preset.get("machine_tiers", {})
         bad = check_incompatible(img["features"])
         if bad:
             raise ValueError(
                 f"ci/build-matrix.yaml: target {img['target']!r} combines mutually-incompatible "
                 f"features {sorted(bad)} - see INCOMPATIBLE_FEATURES in ci/scripts/_matrix.py"
             )
-        for m in img["machines"]:
+        for m in machines:
             name, overrides = _name_and_opts(m)
             entries.append({
                 "machine": name,
@@ -119,7 +142,7 @@ def expand_entries(data=None):
                 "target": img["target"],
                 "sdk": img["sdk"],
                 "eula": machine_eula.get(name, False),
-                "tiers": overrides.get("tiers", img["tiers"]),
+                "tiers": overrides.get("tiers", tiers_on.get(name, tiers)),
                 "repo": img.get("repo", ""),
             })
     return entries
@@ -167,6 +190,11 @@ def main():
         help="print every check_layers.layers path, one per line (resolves CHECK_LAYERS=all)",
     )
     ap.add_argument(
+        "--default-check-layers", action="store_true",
+        help="print the layers that validate.sh checks in addition to meta-agl-core by default (check_layers.default of the "
+             "repos in scope, one per line; empty until a repo opts in)",
+    )
+    ap.add_argument(
         "--check-layer-args", nargs="+", metavar="LAYER",
         help="print the yocto-check-layer --dependency/--additional-layers clause for the "
              "given layer path(s) (paths as they appear in check_layers.layers), as one line "
@@ -208,6 +236,10 @@ def main():
         _, layers = load_check_layers()
         for path in layers:
             print(path)
+        return
+
+    if args.default_check_layers:
+        print("\n".join(load_matrix().get("check_layers", {}).get("default", [])))
         return
 
     if args.check_layer_args:
