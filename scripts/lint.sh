@@ -9,5 +9,6 @@ run() { echo "::group::$*"; "$@" || { echo "FAILED: $1"; fail=1; }; echo "::endg
 run actionlint -color
 if [ -n "${GH_TOKEN:-}" ]; then run zizmor --format=github .; else run zizmor --offline --format=github .; fi
 run shellcheck -x scripts/*.sh kit/*.sh ci/scripts/*.sh docker/builder/entrypoint.sh
+run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi
 exit "$fail"
