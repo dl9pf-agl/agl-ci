@@ -100,6 +100,12 @@ jobs:
             -e AGL_TREE="$PWD/tree" -e KAS_EXEC=kas -e CI=true \
             -e AGL_PIN_REPO -e AGL_PIN_URL -e AGL_PIN_SHA \
             --entrypoint /bin/bash "$builder" agl-ci/ci/scripts/checkout.sh
+          # The repo under test must be at the commit under test. A pin in agl-ucb once hid the pull request (the run was green and
+          # built nothing); this makes that failure loud.
+          if [ -e "tree/$REPO/.git" ]; then
+            got="$(git -C "tree/$REPO" rev-parse HEAD)"
+            [ "$got" = "$AGL_PIN_SHA" ] || { echo "::error::tree/$REPO is at $got, not at the commit under test $AGL_PIN_SHA"; exit 1; }
+          fi
           {
             echo "tier=$tier"
             echo "mode=$mode"
@@ -109,6 +115,9 @@ jobs:
             echo "matrix=$json"
             echo "count=$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])["include"]))' "$json")"
           } >> "$GITHUB_OUTPUT"
+          if grep -qx 'count=0' "$GITHUB_OUTPUT"; then
+            echo "::warning::the matrix of tier $tier is empty for $REPO: nothing will be built and the result is green"
+          fi
 
   # Fork PRs execute contributor code on the self-hosted runner: a maintainer approves via the
   # environment `agl-ci-build` (required reviewers, configured per repo: scripts/github-settings.sh).

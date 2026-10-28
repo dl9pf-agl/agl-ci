@@ -206,7 +206,10 @@ kas_ci_includes() {
 }
 
 # Repo under test: AGL_PIN_REPO (e.g. meta-agl) at AGL_PIN_SHA from AGL_PIN_URL (fork PRs: the fork).
-# Written next to ci-only.yml, appended last so it overrides agl-ucb's branch with the exact commit.
+# Written next to ci-only.yml, appended last so it overrides agl-ucb's branch with the exact commit. The url (a fork for a fork
+# pull request) goes under repos:. The commit is also given under overrides:, because kas/pins.yml of agl-ucb pins meta-agl-demo
+# and meta-agl-devel with overrides: and kas applies overrides: last, so a plain repos: commit would lose against that pin and the
+# run would build the pinned commit instead of the pull request (tested with kas 5.5). meta-agl is not pinned there.
 kas_pin_fragment() {
   cat > "$TREE/build/ci-kas/layer-pin.yml" <<YAML
 header:
@@ -216,6 +219,10 @@ repos:
     url: $AGL_PIN_URL
     branch:
     commit: $AGL_PIN_SHA
+overrides:
+  repos:
+    $AGL_PIN_REPO:
+      commit: $AGL_PIN_SHA
 YAML
   printf 'build/ci-kas/layer-pin.yml'
 }

@@ -35,6 +35,13 @@ and lists only what differs (an explicit machine list, an explicit tiers list, o
 override the names). An unknown name is an error. The expansion is identical to the spelled-out form (checked for the demo and
 devel matrices: same 38 entries).
 
+**The repo under test is pinned by a generated fragment** (`layer-pin.yml`): the url (a fork for a fork pull request) under
+`repos:` and the commit under both `repos:` and `overrides:`. The `overrides:` entry is required because agl-ucb's `kas/pins.yml`
+pins `meta-agl-demo` and `meta-agl-devel` with `overrides:`, which kas applies last; without it a pull request of those repos
+checked out the pinned master instead of itself, found no matrix and went green without building (seen on the first demo and devel
+pull requests, tested with kas 5.5). The `matrix` job now fails when `tree/<repo>` is not at the commit under test, and warns when
+the matrix is empty.
+
 **The caller needs no inputs.** `layer-ci.yml` takes the repo under test from `github.event.repository.name`, and the tier and
 mode of a manual run from the event's own inputs; a caller may still pass `repo`, `tier` and `mode`. A caller is the triggers
 plus one `uses:` line pinned by commit.
