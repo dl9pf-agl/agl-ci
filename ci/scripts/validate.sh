@@ -58,7 +58,9 @@ run_check "bitbake-parse" "$KASFILES" "bitbake -p"
 # (yocto-check-layer's --dependency/--additional-layers) come from
 # ci/build-matrix.yaml's check_layers: key via _matrix.py - add a newly-vendored layer's
 # dependency info there, not here.
-CHECK_LAYERS="${CHECK_LAYERS:-meta-agl/meta-agl-core}"
+# check_layers.default of a repo in scope adds its layers to the default; none does today (the layers of meta-agl-demo and
+# meta-agl-devel are prepared but not yet checked by default, agl-ci chapter 13).
+CHECK_LAYERS="${CHECK_LAYERS:-meta-agl/meta-agl-core $("$PY" "$ENGINE/_matrix.py" --default-check-layers | tr '\n' ' ')}"
 if [ "$CHECK_LAYERS" = "all" ]; then
   CHECK_LAYERS="$("$PY" "$ENGINE/_matrix.py" --list-check-layers | tr '\n' ' ')"
 fi

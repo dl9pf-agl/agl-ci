@@ -5,9 +5,9 @@ on:
   workflow_call:
     inputs:
       repo:
-        description: 'Repo under test (meta-agl | meta-agl-demo | meta-agl-devel | agl-ucb); scopes the downstream chain'
+        description: 'Repo under test (meta-agl | meta-agl-demo | meta-agl-devel | agl-ucb); scopes the downstream chain; empty = the calling repo'
         type: string
-        required: true
+        default: ''
       tier:
         description: 'push-pr | nightly | release | dispatch; empty = derive from the calling event'
         type: string
@@ -28,13 +28,13 @@ on:
 permissions: {}
 
 concurrency:
-  group: layer-ci-${{ inputs.repo }}-${{ inputs.mode }}-${{ github.ref }}
+  group: layer-ci-${{ inputs.repo || github.event.repository.name }}-${{ inputs.mode || github.event.inputs.mode }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # repo under test, pinned over agl-ucb's branch by kas (ci/scripts/_kas_runtime_args.sh): the PR head
   # (fork URL for fork PRs) or this repo at the pushed commit
-  AGL_PIN_REPO: ${{ inputs.repo }}
+  AGL_PIN_REPO: ${{ inputs.repo || github.event.repository.name }}
   AGL_PIN_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name || github.repository }}.git
   AGL_PIN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -66,9 +66,9 @@ jobs:
         with: { cosign-release: v2.6.5 }
       - id: gen
         env:
-          REPO: ${{ inputs.repo }}
-          TIER_IN: ${{ inputs.tier }}
-          MODE_IN: ${{ inputs.mode }}
+          REPO: ${{ inputs.repo || github.event.repository.name }}
+          TIER_IN: ${{ inputs.tier || github.event.inputs.tier }}
+          MODE_IN: ${{ inputs.mode || github.event.inputs.mode }}
           EVENT: ${{ github.event_name }}
           DISPATCH_TIER: ${{ github.event.inputs.tier }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
@@ -134,7 +134,7 @@ jobs:
     env:
       CI: "true"
       AGL_TREE: ${{ github.workspace }}/tree
-      AGL_SCOPE: ${{ inputs.repo }}
+      AGL_SCOPE: ${{ inputs.repo || github.event.repository.name }}
       KAS_EXEC: ${{ inputs.kas_exec }}
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
     steps:
