@@ -17,7 +17,8 @@ if [ "$img" = runner ]; then
          --build-arg "RUNNER_VERSION=$RUNNER_VERSION" --build-arg "RUNNER_SHA256=$RUNNER_SHA256"
          --build-arg "ACTIONLINT_VERSION=$ACTIONLINT_VERSION" --build-arg "ACTIONLINT_SHA256=$ACTIONLINT_SHA256"
          --build-arg "ZIZMOR_VERSION=$ZIZMOR_VERSION" --build-arg "ZIZMOR_SHA256=$ZIZMOR_SHA256"
-         --build-arg "SHELLCHECK_VERSION=$SHELLCHECK_VERSION" --build-arg "SHELLCHECK_SHA256=$SHELLCHECK_SHA256")
+         --build-arg "SHELLCHECK_VERSION=$SHELLCHECK_VERSION" --build-arg "SHELLCHECK_SHA256=$SHELLCHECK_SHA256"
+         --build-arg "DOCKER_CLI_VERSION=$DOCKER_CLI_VERSION" --build-arg "DOCKER_CLI_SHA256=$DOCKER_CLI_SHA256")
 fi
 [ -z "${NO_CACHE:-}" ] || args+=(--no-cache)
 docker buildx build "${args[@]}" --output "type=oci,dest=$out,rewrite-timestamp=true" .
