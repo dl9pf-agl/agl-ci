@@ -196,7 +196,7 @@ so a hashserv that is ahead of the mirror is never worse than no hashserv.
 3. Prune the mirror by age only; an old equivalence that points at a pruned object is a benign miss.
 
 Sync model for a separate web host: the web host pulls (`rsync -a --ignore-existing --delay-updates`, read-only rsync
-module or forced-command key, filters as above, every few minutes and after the nightly) from each trusted host, so no
+daemon in a container (`kit/mirror/rsyncd.sh`), filters as above, every few minutes and after the nightly) from each trusted host, so no
 build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
 timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
 
@@ -239,8 +239,8 @@ Decision recorded: the first draft pulled over ssh with an `rrsync` key of root;
 on a build host is not acceptable even when restricted.
 
 Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (done: fork pull
-requests to `agl-fork`, everything else to `agl-pr`); 4 nginx container on this host (`kit/mirror`, done; TLS open); 5 consumer settings (M4); 6 hashserv wiring
-(M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_FETCH_PREMIRRORONLY`); 8 pull sync to a separate
+requests to `agl-fork`, everything else to `agl-pr`); 4 nginx container on this host (`kit/mirror`, done; TLS optional); 5 consumer settings (M4); 6 hashserv wiring
+(M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_ALLOWED_NETWORKS`; done, `drill.sh --mode mirror`); 8 pull sync to a separate
 web host, pruning and monitoring (M11), git mirrors (M6), the other layer repos (M18), off-site copy (M16).
 
 ## Folder growth
