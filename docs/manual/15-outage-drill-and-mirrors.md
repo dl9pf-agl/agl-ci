@@ -187,6 +187,18 @@ skips an area that is not offered and writes `LAST_SYNC`; bad addresses and URLs
 of the allowed address did not take effect in rsync 3.5, so `rsyncd.sh` assembles the config in the container instead. Not
 tested: two hosts and a real private network or VPN, the volume of a real sstate tree, and the container with published ports
 (the test used host networking).
+**Trying it on one host.** `kit/mirror/sync-selftest.sh` runs the whole chain on the trusted host before the download server is a
+separate machine: daemon (container `agl-rsyncd-test`, published on 127.0.0.1) -> pull as the normal user with the client of the
+builder image into a scratch tree (`~/agl-sync-selftest`) -> an nginx container on that tree (`agl-mirror-test`, port 18080) ->
+checks (LAST_SYNC, nothing excluded in the tree, a second pull changes nothing, a write is refused, a file through nginx is
+byte-equal, listing is 403). It touches neither the real `agl-mirror` nor a real `agl-rsyncd` (`RSYNCD_NAME` and `MIRROR_NAME`
+exist for that), and by default pulls only files up to 200 KB (`RSYNC_EXTRA=--max-size=200K`), so a 30 GB cache costs a few
+hundred MB; `RSYNC_EXTRA=` pulls everything. Run it as the normal user; it asks sudo only where `rsyncd.sh` and `run.sh` do, to
+read the root-only cache. `kit/mirror/sync-selftest.sh cleanup` removes the containers and the scratch tree. On one host, docker's
+port mapping makes the daemon see the address of the bridge gateway, not 127.0.0.1, so the script allows that address; the log
+lines printed at the end show what the daemon saw. A separate download server comes from its own address, which is what
+`RSYNCD_ALLOW` is for. Tested locally with host networking (`SELFTEST_NETWORK=host`); the default bridge path (published
+port, gateway address) is not tested here and is what the first run on the trusted host shows.
 Decision recorded: the first draft pulled over ssh with an `rrsync` key of root; it was dropped, because a key to a root account
 on a build host is not acceptable even when restricted.
 
