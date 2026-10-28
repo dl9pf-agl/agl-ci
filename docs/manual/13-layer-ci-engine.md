@@ -15,7 +15,7 @@ imported yet (they still call `make`); the matrix and scripts are forge-independ
 - **Repo under test** = env `AGL_PIN_REPO`, `AGL_PIN_URL` (fork URL for fork PRs), `AGL_PIN_SHA`. The engine writes
   `<tree>/build/ci-kas/layer-pin.yml` (`url`, `commit`, `branch:` cleared) and appends it last to the kas chain, so kas
   builds exactly that commit and nothing is reset to a branch tip. The `matrix` job first runs `ci/scripts/checkout.sh`
-  (`kas checkout` of `base.yml` + `pins.yml` + the pin; `pins.yml` in agl-ucb pins the externals, `meta-agl-demo` and `meta-agl-devel`, so no layer follows a branch tip except the repo under test) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
+  (`kas checkout` of `base.yml` + `pins.yml` + the pin; `pins.yml` in agl-ucb pins the externals only; `meta-agl`, `meta-agl-demo` and `meta-agl-devel` float on the tip of their branch, and the repo under test is pinned by a generated fragment) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
 - **Engine** = `agl-ci/ci/scripts` (+ `ci/kas/*.yml`, staged into `<tree>/build/ci-kas/` at run time because kas needs
   them inside the work dir).
 - `AGL_TREE` selects the tree (default: current directory).
@@ -35,10 +35,18 @@ and lists only what differs (an explicit machine list, an explicit tiers list, o
 override the names). An unknown name is an error. The expansion is identical to the spelled-out form (checked for the demo and
 devel matrices: same 38 entries).
 
+**Floating layers and the written-out pin.** `meta-agl`, `meta-agl-demo` and `meta-agl-devel` float on the tip of their branch; a
+meta-agl run therefore builds the current heads of demo and devel (a real integration test of the chain). What a run resolved to
+is not lost: `ci/scripts/resolved-pins.sh` prints the commit of every repo of the tree in the format of agl-ucb's `kas/pins.yml`
+(offline, through `kas for-all-repos`), and the `matrix` job puts it in the job summary. **A release needs this written-out pin**:
+build it with `kas/base.yml:...:resolved-pins.yml` in place of `kas/pins.yml`, and store the file with the release (bundle,
+M17/M20). Tested: with the file alone a tree moved to older commits was brought back to exactly the recorded commits, offline.
+The commits must be on the declared branch (`base.yml` says `branch: master`); a commit that is not on it makes kas fetch.
+
 **The repo under test is pinned by a generated fragment** (`layer-pin.yml`): the url (a fork for a fork pull request) under
 `repos:` and the commit under both `repos:` and `overrides:`. The `overrides:` entry is required because agl-ucb's `kas/pins.yml`
-pins `meta-agl-demo` and `meta-agl-devel` with `overrides:`, which kas applies last; without it a pull request of those repos
-checked out the pinned master instead of itself, found no matrix and went green without building (seen on the first demo and devel
+pinned `meta-agl-demo` and `meta-agl-devel` with `overrides:` (kas applies those last; they float now, but the entry stays as defence
+in depth for any repo that gets pinned again); without it a pull request of those repos checked out the pinned master instead of itself, found no matrix and went green without building (seen on the first demo and devel
 pull requests, tested with kas 5.5). The `matrix` job now fails when `tree/<repo>` is not at the commit under test, and warns when
 the matrix is empty.
 

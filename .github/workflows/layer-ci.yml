@@ -115,6 +115,15 @@ jobs:
             echo "matrix=$json"
             echo "count=$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])["include"]))' "$json")"
           } >> "$GITHUB_OUTPUT"
+          # What this run resolved to, in the format of kas/pins.yml: meta-agl, meta-agl-demo and meta-agl-devel float on their
+          # branch, so this is their written-out pin (a release stores it, chapter 13).
+          if docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" -e HOME=/tmp \
+              -e AGL_TREE="$PWD/tree" -e KAS_EXEC=kas -e CI=true -e AGL_PIN_REPO -e AGL_PIN_URL -e AGL_PIN_SHA \
+              --entrypoint /bin/bash "$builder" agl-ci/ci/scripts/resolved-pins.sh > resolved-pins.yml; then
+            { echo "### Resolved pins of this run"; echo '```yaml'; cat resolved-pins.yml; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::could not write out the resolved pins of this run"
+          fi
           if grep -qx 'count=0' "$GITHUB_OUTPUT"; then
             echo "::warning::the matrix of tier $tier is empty for $REPO: nothing will be built and the result is green"
           fi
