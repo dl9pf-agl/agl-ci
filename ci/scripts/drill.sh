@@ -39,7 +39,7 @@ case "$MODE" in
     DRILL_KAS=build/ci-kas/ci-allowed-networks.yml; DRILL_WHAT="the mirror host $mirror_host only (BB_ALLOWED_NETWORKS)" ;;
   *)
     # The offline drill proves the local cache; with the network off a mirror URL could only produce misses.
-    unset AGL_MIRROR_URL
+    unset AGL_MIRROR_URL AGL_GIT_MIRROR KAS_PREMIRRORS
     DRILL_KAS=build/ci-kas/ci-offline.yml; DRILL_WHAT="BB_NO_NETWORK=1" ;;
 esac
 

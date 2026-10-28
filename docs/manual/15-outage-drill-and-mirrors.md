@@ -149,6 +149,23 @@ misses through a URL. AGL's own `MIRRORS` in `agl.conf` stay as the last line. A
 `download.automotivelinux.org/AGL/mirror/` (and `sstate-mirror/master/<tune>/`) answers today; it is not used as a primary
 and whether its sstate objects match our hashes is not checked.
 
+**Git mirrors for the layers (M6).** kas clones the layers (oe-core, meta-openembedded, the AGL layers, 23 repositories in
+agl-ucb and the layer feature fragments) from github.com, git.yoctoproject.org and git.openembedded.org, so a clean checkout needs
+them. `kit/mirror/git-repos-from-kas.py <dirs>` lists the URLs from the kas files; `kit/mirror/git-mirrors.sh` keeps bare mirrors of
+them in `CACHE_DIR/git/<host>/<path>` (first run clones, later runs update, then `git update-server-info`); nginx serves them as
+`/git/` over plain dumb HTTP (`run.sh` mounts the folder when it exists). Run it as root on the trusted host, from cron or after the
+nightly: `kit/mirror/git-repos-from-kas.py <agl-ucb tree> | CACHE_DIR=/srv/agl-cache kit/mirror/git-mirrors.sh`. A consumer sets
+`AGL_GIT_MIRROR=1` with `AGL_MIRROR_URL`; the engine then exports `KAS_PREMIRRORS="^https?://([^/]+)/ $AGL_MIRROR_URL/git/\1/"` (kas
+rewrites the clone URL; the kas-container script forwards the variable). It is opt-in because kas has **no fallback**: tested with
+kas 5.5 in the builder image, a mirror that lacks the repository fails the checkout ("repository ... not found") instead of using the
+original URL, so enable it only where the mirror is complete, e.g. the T2 rebuild and the untrusted hosts. Also tested with real kas: a
+checkout whose pinned commit is already present does **not** contact any remote (second run with the network off), so a warm
+workspace survives an outage by itself. Integrity: the layers are pinned by commit, so a damaged mirror fails the checkout instead of
+changing the build; only a `branch:` without `commit:` trusts the mirror to be current. The repo under test is the exception: the engine
+puts a line first that maps `AGL_PIN_URL` (for a fork pull request the fork) to itself, so it is cloned from where it is, while all
+other layers use the mirror (tested with real kas: without that line the checkout fails with "repository ... not found"). Not
+done: the first clone in `checkout.sh` of the workflow uses the original URLs (the mirror drill covers the sources, not yet this clone).
+
 **Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
 `sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.
 A consumer that gets a unihash without its object misses and rebuilds that task; without hashserv it would miss as well,
@@ -232,7 +249,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | read-only rsync daemon container (`kit/mirror/rsyncd.sh`) and pull script (`kit/mirror/pull-sync.sh`) written and tested locally; only needed once the download server is another machine (user: private network, start the daemon, cron) |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | fragment and engine wiring done (agl-ucb first, then agl-ci); proof by the drill from the mirror alone (step 7) pending |
 | M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; the fill job reads no mirror (`fetch.sh` unsets `AGL_MIRROR_URL`); git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
-| M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | open |
+| M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | scripts and engine switch (`AGL_GIT_MIRROR=1`) done and tested with real kas and a local dumb-HTTP mirror; to run on the host: user (cron); not yet used by `checkout.sh`; TODO later: after the routine nightly fetch, a scheduled check with `AGL_GIT_MIRROR=1` (layers cloned and sources fetched through the mirror only) so that the upstream-outage case is exercised regularly |
 | M7 | Outage drill | fetch drill A done on real bitbake (2026-10-26): 0 misses for all four meta-agl images after a fetch. Drill B (full offline build) and drill C (offline layers) open |
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
@@ -242,7 +259,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
 | M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | open, needs a test with real bitbake |
 | M14 | Input mirror for image rebuild inputs | low |
-| M15 | Unverified claims to test: kas with a present pinned commit and no network; `own-mirrors` conversion; sstate prune without access times; `cosign verify --local-image` on a skopeo-made archive | open |
+| M15 | Unverified claims to test: ~~kas with a present pinned commit and no network~~ (verified 2026-10-27: no remote contact); `own-mirrors` conversion; sstate prune without access times; `cosign verify --local-image` on a skopeo-made archive | open |
 | M16 | Off-site second copy of releases for T2 and T3 | decide later |
 | M17 | Release bundle for T3 (images, kernels, builder and runner OCI archives, sources, pins, SBOM, signatures, bundles, provenance, hashserv and prserv snapshot) | open |
 | M18 | Caller workflow, `ci/build-matrix.yaml` and ruleset (`CHECK='ci / result' scripts/github-settings.sh`, required check, rebase merge only) for `meta-agl-demo`, `meta-agl-devel` and `agl-ucb`; `meta-agl` already has them. The ruleset only goes on together with the caller (a required check that never reports blocks every merge). Callers use the nightly schedule, not a push trigger | earmarked |
