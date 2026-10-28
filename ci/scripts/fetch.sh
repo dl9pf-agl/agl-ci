@@ -28,4 +28,14 @@ rc=$?
 
 tarballs="$(find "${AGL_DL_DIR:-$TREE/build/downloads}" -maxdepth 1 -name 'git2_*.tar.gz' | wc -l)"
 echo "fetch.sh: bitbake exit $rc, $tarballs git mirror tarballs in ${AGL_DL_DIR:-DL_DIR} (log $LOG)"
+
+# The uninative tarball is no recipe source: bitbake's uninative handler downloads it into DL_DIR/uninative/<sha256>/ at the
+# start of the first run. A mirror without it cannot rebuild anything on a new builder (chapter 15), so a fill that did not leave
+# one behind fails instead of staying green.
+uninative="$(find "${AGL_DL_DIR:-$TREE/build/downloads}/uninative" -mindepth 2 -maxdepth 2 -name '*.tar.xz' 2>/dev/null | wc -l)"
+echo "fetch.sh: $uninative uninative tarball(s) in ${AGL_DL_DIR:-DL_DIR}/uninative"
+if [ "$uninative" -eq 0 ]; then
+  echo "fetch.sh: ERROR: no uninative tarball in DL_DIR/uninative; the mirror would be incomplete" >&2
+  [ "$rc" -ne 0 ] || rc=1
+fi
 exit "$rc"
