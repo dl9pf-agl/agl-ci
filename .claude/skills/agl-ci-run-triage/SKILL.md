@@ -26,7 +26,10 @@ gh api repos/dl9pf-agl/<repo>/check-runs/<job-id>/annotations --jq '.[]|.message
 gh pr checks <n> -R dl9pf-agl/<repo>
 gh api orgs/dl9pf-agl/actions/runners --jq '.runners[]|"\(.name) \(.status) busy=\(.busy)"'
 ```
-The job log of a running self-hosted build is not available through `gh run view --log` until it finishes; use the journal on the host (`journalctl -u agl-runner@N`).
+The log of a **running** job is available through the API, in chunks that lag behind (10 min on one job, 90 min on another that may have stalled or only streamed late): `gh api --allow-escape-sequences repos/dl9pf-agl/<repo>/actions/jobs/<job-id>/logs | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > job.log` (`gh` refuses colour codes without the flag). Compare the last log timestamp with `date -u` before trusting it. Host side: `journalctl -u agl-runner@N` shows only the runner, not the build; `docker stats --no-stream` on the host shows whether a slot's containers use CPU.
+
+## Estimating a build
+In the log: `Sstate summary: Wanted W Local L Missed M ...` (M = tasks that really run, low match = long build) and `Running task N of T (...)`. Take N per hour from the timestamps. N counts early cheap tasks (fetch, populate_lic) as much as late compiles, so the rate falls; do not extrapolate linearly from the first hours. Calibration measured 2026-10-29 on the trusted host (two slots building in parallel): cold Qt and Flutter demos (25% match, M about 5250) reached only 5700 of 12500 tasks in 10 h, about 500 tasks/h late, so a cold build of such an image takes roughly 20-30 h; a build with 68% match (agl-xen-image-test, M 2317) ran about 1500-2000 tasks/h early; cold agl-image-minimal took 4h29.
 
 ## Symptoms
 | Symptom | Likely cause | Check |
