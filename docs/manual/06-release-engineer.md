@@ -28,7 +28,7 @@ cosign public-key --sk --slot signature > keys/release/<id>.pub
 hand-over log (section 7). `--touch-policy always` means every signature needs a physical touch.
 
 ## 3 Publish the public key (key exchange)
-1. Open a PR adding `keys/release/<id>.pub` (signed commit, two-person review per CODEOWNERS).
+1. Open a PR adding `keys/release/<id>.pub` (signed commit; two-person review once a second engineer exists, today CODEOWNERS names one owner).
 2. Send the SHA-256 fingerprint (`sha256sum keys/release/<id>.pub`) over a second, independent channel
    (voice/video call or signed mail) to the other maintainers; they compare before approving.
 3. Merge. From now on `verify-release.sh --release` accepts signatures of this key.
@@ -58,7 +58,7 @@ in `keys/release/`). Old signatures stay valid until the old key is revoked.
 - Lost PIN: `cosign piv-tool unblock --puk ... --new-PIN ...`. PIN and PUK both lost: token is dead, rotate.
 
 ## 7 Hand-over to another release engineer
-Checklist, record each step with date and both names in `docs/handover-log.md`:
+Checklist, record each step with date and both names in `docs/handover-log.md` (create the file at the first hand-over):
 1. New engineer completes sections 1-3 with their own token(s). Nothing is transferred between tokens.
 2. Existing engineers review and merge the new public key; confirm the fingerprint out of band.
 3. New engineer re-signs all supported releases (section 5) and runs `verify-release.sh --release` on each.

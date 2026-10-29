@@ -21,6 +21,9 @@ workflow YAML. Names of the repo/registry come from `policy/project.env` or the 
 2. Edit `policy/project.env`, `docker/pins.env` (verify every hash), `policy/cve.env`, replace `keys/release/`.
 3. Org settings per chapter 05; create environment `release` (chapter 06); set LINT_MODE only for break-glass.
 4. Run `lint` then `images` via PR; compare digests; read the manual chapters 03-04 before trusting anything.
+5. Layer CI (chapter 13) is forge-independent in its scripts and matrices; its GitLab adapter is not imported yet (chapter 13, "Origin").
+
+`scripts/github-settings.sh` also switches on full-SHA pinning of actions; Dependabot (chapter 12) keeps the pins current.
 
 ## Forge-specific pieces and equivalents
 | Piece | GitHub | GitLab | Forgejo |
@@ -39,4 +42,4 @@ image names in `images.yml` (drive from `IMAGES`). The push/sign blocks already 
 1. (done) `scripts/publish-image.sh`, `scripts/sign-image.sh` called from the workflow.
 2. `images.yml` matrix generated from `IMAGES` in `policy/project.env` (needs ordered builds: builder before runner).
 3. Issuer/identity regexp into `policy/project.env`.
-4. Mark as template repository; add `docs/manual/12-adopter-checklist.md` from the steps above.
+4. Mark as template repository; add an adopter checklist chapter from the steps above.

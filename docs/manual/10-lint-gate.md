@@ -1,14 +1,15 @@
 # 10 Lint and security gate
 
-Status: **implemented**, local runs verified (clean tree passes; a deliberately bad `pull_request_target` workflow
-with expression injection fails in `enforce`, passes in `report`). First CI run is the PR test run.
+Status: **in use**. `lint` is the required check of the `main` ruleset of agl-ci; local runs verified (clean tree passes; a deliberately
+bad `pull_request_target` workflow with expression injection fails in `enforce`, passes in `report`).
 
 ## What runs (`scripts/lint.sh`, workflow `lint.yml`)
 | Tool | Checks | Config |
 |---|---|---|
 | actionlint | workflow syntax, expression types, runner labels, shellcheck of `run:` blocks | `.github/actionlint.yaml` (our self-hosted labels) |
 | zizmor | template injection, excessive permissions, dangerous triggers, unpinned `uses:`, credential persistence | inline `# zizmor: ignore[rule] reason` (e.g. `self-repository` in images.yml: actionlint 1.7.12 does not accept the new `$/` syntax) or `.github/zizmor.yml` |
-| shellcheck | `scripts/*.sh`, builder entrypoint | inline `# shellcheck disable=SCxxxx` with reason |
+| shellcheck | `scripts/*.sh`, `kit/*.sh`, `ci/scripts/*.sh`, builder entrypoint | inline `# shellcheck disable=SCxxxx` with reason |
+| matrix test | `ci/scripts/_matrix_test.py`: the validation of untrusted `build-matrix.yaml` files (chapter 13) | needs PyYAML |
 
 
 Tools are installed by `scripts/install-lint-tools.sh` from pinned releases with sha256 (`docker/pins.env`);
@@ -20,7 +21,8 @@ so their hashes are trust-on-first-download. `GH_TOKEN` (read-only) enables zizm
 - `images.yml` calls it as job `lint`; every build job `needs: lint`, so nothing is built or published
   when lint fails (tags included).
 - Scorecard and CodeQL are separate scheduled checks (planned, chapter 07).
-- Branch ruleset (planned): `lint` required.
+- Branch ruleset: `lint` is required (live on agl-ci since the ruleset of 2026-10-22).
+- Other repos use the same tools through the reusable workflow `repo-lint.yml` (agl-ucb calls it; chapter 05, "Pools").
 
 ## Run locally
 ```

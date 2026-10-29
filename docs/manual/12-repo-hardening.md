@@ -1,6 +1,6 @@
 # 12 Repository hardening
 
-Status: files and `scripts/github-settings.sh` **implemented**; settings applied on 2026-10-22 (see log at the end).
+Status: files and `scripts/github-settings.sh` **implemented**; settings applied on 2026-10-22; later changes are in "Settings log" at the end.
 
 ## What is in the repo
 | File | Purpose |
@@ -20,9 +20,9 @@ Status: files and `scripts/github-settings.sh` **implemented**; settings applied
 Layer repos (2026-10-23): `meta-agl` has the same ruleset (without the repo-level merge settings, the ruleset alone limits the method) with the required check `ci / result` (the `result` job of the
 caller workflow), applied with `CHECK='ci / result' ONLY_RULESET=1 scripts/github-settings.sh dl9pf-agl/meta-agl`.
 `ONLY_RULESET=1` leaves the other repository settings alone; they are not applied to `meta-agl` yet (merge methods,
-secret scanning, push protection, private vulnerability reporting, full-SHA pinning). `meta-agl-demo`, `meta-agl-devel` and
-`agl-ucb` get the ruleset together with their caller workflow, because a required check that never reports blocks every
-merge.
+secret scanning, push protection, private vulnerability reporting). Full-SHA pinning is on for all five repos since 2026-10-29.
+`meta-agl-demo`, `meta-agl-devel` and `agl-ucb` get the ruleset together with their caller workflow, because a required check
+that never reports blocks every merge; they still allow merge and squash commits.
 - Secret scanning and push protection on; private vulnerability reporting on.
 - Actions: full-SHA pinning required; fork-PR workflows need approval for all external contributors; default
   `GITHUB_TOKEN` read-only; Actions cannot approve PRs.
@@ -35,7 +35,7 @@ blocks every PR that does not touch those paths. Image changes are covered by th
 
 ## Settings that exist in the web UI only (owner action)
 1. Org *Authentication security*: require two-factor authentication for all members.
-2. Org *Actions > General*: same SHA-pinning and fork-PR approval policy at org level, so new repos inherit it.
+2. Org *Actions > General*: same SHA-pinning and fork-PR approval policy at org level, so new repos inherit it (open: the org-level SHA-pinning setting is still off; the five repos have it per repo).
 3. Org *Packages*: allow public packages; make `builder` and `runner` public.
 4. Org *Runner groups*: allow public repositories only after the fork-PR approval is on.
 
@@ -90,3 +90,10 @@ To adopt it:
    self-hosted slot pool).
 3. Keep `strict` false (the queue provides the guarantee).
 Cost: a multi-hour cold build per queued PR; with the warm cache about 25 minutes each.
+
+## Settings log
+| Date | Change |
+|---|---|
+| 2026-10-22 | Settings of `agl-ci` applied with `scripts/github-settings.sh`: `main` ruleset (pull request, `lint`), secret scanning, push protection, full-SHA pinning, fork-PR approval, read-only token |
+| 2026-10-23 | Merge strategy: rebase only (ruleset and repo settings); `meta-agl` gets the ruleset with `ci / result` |
+| 2026-10-29 | Full-SHA pinning (`sha_pinning_required`) switched on for `agl-ucb`, `meta-agl`, `meta-agl-demo`, `meta-agl-devel` after a scan of all workflows (9 files, default branches and open pull request heads) found no unpinned `uses:`; the org-level setting stays off. Whether to keep the update churn is to be decided later |

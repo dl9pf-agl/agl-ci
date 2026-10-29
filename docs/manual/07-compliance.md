@@ -10,8 +10,9 @@ Status: **planned**. Rule: only claims that are evidenced by a committed artifac
 | EU CRA | SBOM, vulnerability handling, secure by default | SPDX SBOM per image, `SECURITY.md`, pin-bump process |
 | UNECE R155 / ISO 21434 | Supplier tool integrity, cybersecurity management of the build chain | this manual, hand-over log, key registry |
 
-Gaps to close before claiming any of the above: enable branch rulesets and signed commits, add `SECURITY.md`,
-Scorecard workflow, CODEOWNERS, Dependabot for actions; decide SLSA L3 generator.
+Gaps to close before claiming any of the above: signed commits, rulesets for the layer repos other than `meta-agl`
+(`agl-ucb`, `meta-agl-demo`, `meta-agl-devel` have none), a team in CODEOWNERS and required reviews once there is a second
+engineer; decide the SLSA L3 generator. (`SECURITY.md`, Scorecard, CODEOWNERS, Dependabot and the `main` ruleset of agl-ci exist.)
 
 ## Release report contents (planned, `report.md` / `report.html`)
 Completeness; provenance (commit, workflow, runner type, pins and diff to previous release, signature table);
@@ -23,5 +24,5 @@ rest from 2027-12-11.
 
 ## Status of the repo-hygiene items (2026-10-22)
 Done: LICENSE, SECURITY.md, CODEOWNERS, Dependabot (actions), Scorecard workflow, `main` ruleset (PR + `lint`),
-secret scanning + push protection, SHA pinning, read-only token default (chapter 12). Open: signed commits, required
+secret scanning + push protection, SHA pinning (the setting is enforced on all five repos since 2026-10-29), read-only token default (chapter 12). Open: signed commits, required
 reviews (needs a second engineer), org 2FA and org-level policies (owner action), first signed release tag.
