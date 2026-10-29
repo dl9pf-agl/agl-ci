@@ -33,6 +33,9 @@ RUN t=$(mktemp -d) \
  && curl -fsSL -o "$t/d.tgz" "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
  && echo "${DOCKER_CLI_SHA256}  $t/d.tgz" | sha256sum -c - \
  && tar -xzf "$t/d.tgz" --no-same-owner --strip-components=1 -C /usr/local/bin docker/docker && rm -rf "$t"
+# job-started hook: refuses a pull request from a fork on a trusted host (docs/manual chapter 05); root-owned, outside the runner directory
+COPY --chmod=0755 docker/runner/job-started.sh /opt/agl-hooks/job-started.sh
+ENV ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/agl-hooks/job-started.sh
 RUN useradd --create-home --uid 1001 --shell /bin/bash runner && sed -i -E 's/^(runner:[^:]*:)[0-9]*:/\119000:/' /etc/shadow /etc/shadow-
 USER 1001
 WORKDIR /home/runner/actions-runner

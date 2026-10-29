@@ -92,8 +92,9 @@ The same rule picks the runner pool (chapter 05, "Pools"): the matrix step sets 
 `pool=agl-pr` for everything else; the build job uses it in `runs-on`. It is decided from the event in the pinned
 workflow, never from a caller input, so a pull request cannot pick the pool through the inputs of our workflow. **Limit:** a
 fork's workflow file is the fork's own; it does not have to call our workflow and could name the label `agl-pr` in its own
-`runs-on`. Today only the approval policy `all_external_contributors` (a maintainer must approve the run, and must read the
-workflow change) stands in the way; restricting the trusted runners to the reusable workflows of agl-ci is open item M21.
+`runs-on`. Two things stand in the way: the approval policy `all_external_contributors` (a maintainer must approve the run and read the
+workflow change), and, from the runner image that carries it, the job-started hook of the trusted hosts, which refuses any pull request
+whose head repository is not the repository itself before a step runs (chapter 05, "Security notes").
 An `agl-fork` runner (untrusted host) is online; a fork pull request has not been run on it yet.
 
 ### The matrix file is untrusted input
