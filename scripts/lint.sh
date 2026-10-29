@@ -9,6 +9,7 @@ run() { echo "::group::$*"; "$@" || { echo "FAILED: $1"; fail=1; }; echo "::endg
 run actionlint -color
 if [ -n "${GH_TOKEN:-}" ]; then run zizmor --format=github .; else run zizmor --offline --format=github .; fi
 run shellcheck -x scripts/*.sh kit/*.sh ci/scripts/*.sh docker/builder/entrypoint.sh docker/runner/*.sh
+run kit/run-loop_test.sh   # which slot gets which label and limits (the lint slots)
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi

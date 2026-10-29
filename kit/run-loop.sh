@@ -6,7 +6,13 @@ set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
 . /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS MEM_LIMIT CPU_LIMIT DIND CACHE_DIR
-#                               POOL MIRROR_URL HASHSERV_RW HASHSERV_UPSTREAM
+#                               POOL MIRROR_URL HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS LINT_MEM_LIMIT LINT_CPU_LIMIT
+# --- slot role: slots 1..SLOTS serve the pool label; the slots after them are lint slots (own label, small, no cache, no hash server)
+if [ "$slot" -gt "${SLOTS:-1}" ]; then
+  LABELS="${LINT_LABELS:?LINT_LABELS missing in runner.env}"; MEM_LIMIT="${LINT_MEM_LIMIT:-4g}"; CPU_LIMIT="${LINT_CPU_LIMIT:-2}"
+  CACHE_DIR=""; MIRROR_URL=""; HASHSERV_RW=""; HASHSERV_UPSTREAM=""
+fi
+# --- end slot role
 E="$ENGINE"; WS=/home/runner/actions-runner/_work   # same path in runner + sidecar (nested bind mounts)
 # Cache of this host: all its slots read and write CACHE_DIR, same path in host, sidecar and runner. A host is either
 # trusted or untrusted (POOL, set by deploy.sh), never both, so its cache never mixes the two. A trusted host's

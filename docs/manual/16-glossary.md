@@ -31,6 +31,7 @@ Terms in alphabetical order inside each group. The chapter that explains a term 
 ## Hosts and pools
 | Term | Meaning | Chapter |
 |---|---|---|
+| lint slot | An extra small runner slot of a host (label `agl-lint`, or `agl-fork-lint` on an untrusted host; no cache) that takes the lint job of `repo-lint.yml` only, so lint does not wait behind builds | 05 |
 | pool | A class of hosts: trusted (label `agl-pr`: same-repo pull requests, push, nightly, release) or untrusted (label `agl-fork`: fork pull requests) | 05 |
 | host, slot | A physical machine serves one pool; it runs 1..n slots (`agl-runner@N`), each building one job at a time | 05 |
 | JIT runner | A runner registered with a single-use config for one job | 05 |
