@@ -70,7 +70,7 @@ The commits must be on the declared branch (`base.yml` says `branch: master`); a
 ### yocto-check-layer
 `validate.sh` checks `meta-agl/meta-agl-core` by default. `check_layers.default` in a repo's matrix adds
 layers to that default for every run in scope. The demo and devel matrices list their layers (so `CHECK_LAYERS=all` and
-`make validate CHECK_LAYERS="..."` can check them) but keep `default: []`: **not active** until the layers pass; see M19.
+`CHECK_LAYERS="..." ci/scripts/validate.sh` can check them) but keep `default: []`: **not active** until the layers pass; see M19.
 
 ## Executing kas
 `KAS_EXEC=kas-container` (default): `kas-container` with `KAS_CONTAINER_IMAGE` (the signed builder, by digest) and
