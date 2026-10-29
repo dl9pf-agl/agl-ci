@@ -247,15 +247,48 @@ Lesson (2026-10-22): the first version requested the JIT config before preparing
 - Never run `pull_request_target` workflows on this runner.
 - **Job-started hook.** The runner image sets `ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/agl-hooks/job-started.sh` (root-owned, outside the
   runner directory; source `docker/runner/job-started.sh`). GitHub runs it before the first step of every job and fails the job when it
-  exits non-zero. On a trusted host (`run-loop.sh` passes `AGL_POOL=$POOL`; unset counts as trusted) it refuses every event
-  `pull_request*` whose head repository is not the repository itself, including a deleted fork, and an event it cannot read
-  (fail closed). It exists because the workflow file of a fork pull request is the fork's own and can name the label `agl-pr` itself.
-  An untrusted host accepts everything; push, schedule, dispatch and release are not affected. A refused job shows `agl-hook: job
-  refused: ...` in the `Set up runner` log. Tested: 16 cases in `docker/runner/job-started_test.sh` (run by `scripts/lint.sh`, shown to
-  fail on three broken copies of the hook) and in the image smoke test. Not tested yet: on a real runner (needs the image published,
-  `kit/runner.digest` bumped and the host updated), in particular that `GITHUB_EVENT_NAME` and `GITHUB_EVENT_PATH` are set when the hook
-  runs (the docs say hooks get the default variables and the payload); if they are not, every job on the trusted host fails at once, which is
-  visible and safe. Run `runner-smoke.yml` and a same-repo pull request after the first update.
+  exits non-zero. It exists because the workflow file of a fork pull request is the fork's own and can name the label `agl-pr` itself.
+  The pool is read from the environment of the container's **first process** (`run-loop.sh` starts the container with `-e
+  AGL_POOL=$POOL`; unknown counts as trusted), not from the hook's own environment, which a workflow might be able to fill. On a
+  trusted host the hook refuses every pull request whose head repository is not the repository itself, including a deleted fork. A
+  pull request is recognised by the `pull_request` object of the payload as well as by the event name, the base repository is the one
+  in the payload (no fallback to `GITHUB_REPOSITORY`), the tool path is fixed, and a readable payload is required for every job (fail
+  closed). An untrusted host accepts everything; push, schedule, dispatch and release pass on a trusted host because their payload is
+  not a pull request. A refused job shows `agl-hook: job refused: ...` in the `Set up runner` log. What it cannot stop: a file that already
+  exists in the image used through `GITHUB_EVENT_PATH` or `BASH_ENV`; the container is single-use, a workflow cannot create files before
+  the job starts, and the image has no file that would help.
+  Tested: 26 cases in `docker/runner/job-started_test.sh` (run by `scripts/lint.sh`), including attempts to tamper with the
+  environment of the hook (pool, event name, `PATH`, repository, `BASH_ENV`); shown to fail on six deliberately weakened copies of the
+  hook; the image smoke test runs both pools and the tampering inside the built image. **Not tested yet on a real runner:** it needs the
+  image published, `kit/runner.digest` bumped and the host updated.
+
+### Verifying the hook on a real host
+Do this after the first update of a trusted host, and after every change of the hook. A failure in one of the first three steps is
+visible at once (every job on the trusted host fails); the last step is the real attack.
+1. `runner-smoke.yml` by dispatch (event `workflow_dispatch`, payload without `pull_request`): must pass.
+2. A same-repo pull request with a build (for example a meta-agl pull request): must pass.
+3. Read the `Set up runner` log of one of them: no `agl-hook: job refused`. If every job fails with "no readable event payload" or "event
+   name is not set", GitHub does not give the hook those variables and the hook needs another source for them.
+4. **Attack from a fork.** On the test fork (`dl9pf/meta-agl`, with the owner's permission) put this workflow on a branch and open a
+   pull request to the base repository. Every job names the trusted label; the steps only print a line and use no secret. The
+   variants try the ways a workflow could get past the hook:
+   ```yaml
+   name: hook-attack
+   on: pull_request
+   permissions: {}
+   env: {AGL_POOL: untrusted, GITHUB_EVENT_NAME: push, BASH_ENV: /nonexistent}      # workflow level
+   jobs:
+     plain:      {runs-on: [self-hosted, agl-pr], steps: [{run: echo HOOK-BYPASSED plain}]}
+     job-env:
+       runs-on: [self-hosted, agl-pr]
+       env: {AGL_POOL: untrusted, ACTIONS_RUNNER_HOOK_JOB_STARTED: '', PATH: /tmp:/usr/bin}
+       steps: [{run: echo HOOK-BYPASSED job-env}]
+     container:  {runs-on: [self-hosted, agl-pr], container: 'debian:trixie-slim', steps: [{run: echo HOOK-BYPASSED container}]}
+   ```
+   **Pass:** every job fails before its first step with `agl-hook: job refused: pull request from fork dl9pf/meta-agl on a trusted host`,
+   and no log contains `HOOK-BYPASSED`. **If any job prints it, the hook is bypassed:** stop the trusted slots, tell the owner, fix the
+   hook (the test in `docker/runner/job-started_test.sh` gets the new case first). Then close the pull request and delete the branch.
+   GitHub may reject some `env:` names (`GITHUB_*`); a rejected workflow tests less, note which variants ran.
 
 ## Open points
 `/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested. (The old bare-host test runner
