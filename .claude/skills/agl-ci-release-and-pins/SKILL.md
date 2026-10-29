@@ -8,7 +8,7 @@ description: How pins work across AGL CI and what a release needs - callers pinn
 ## Which thing is pinned where
 | What | Where | Rule |
 |---|---|---|
-| agl-ci workflow used by a repo | `uses: dl9pf-agl/agl-ci/.github/workflows/layer-ci.yml@<40-char SHA> # comment` in `ci.yml` of meta-agl, -demo, -devel, agl-ucb (lint) | Org enforces SHA pinning. Bump after every agl-ci change that callers need (timeouts, checks, fixes ship through this pin only). |
+| agl-ci workflow used by a repo | `uses: dl9pf-agl/agl-ci/.github/workflows/layer-ci.yml@<40-char SHA> # comment` in `ci.yml` of meta-agl, -demo, -devel, agl-ucb (lint) | Policy: full SHA (the setting `sha_pinning_required` is on for agl-ci only, off for the org and the layer repos; zizmor in lint catches an unpinned `uses:` in agl-ci). Bump after every agl-ci change that callers need (timeouts, checks, fixes ship through this pin only). |
 | Builder image | `ci/builder.digest` | Set after `images` publishes and verifies; the matrix job cosign-verifies it. |
 | Runner image on hosts | `kit/runner.digest` | Then `./kit/update.sh` on each host. |
 | External layers (poky, meta-openembedded, BSPs, bitbake...) | agl-ucb `kas/pins.yml` under `overrides.repos` | Pinned together; they drift out of mutual compatibility if bumped one by one (meta-flutter vs oe-core). |
