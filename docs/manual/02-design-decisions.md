@@ -1,5 +1,7 @@
 # 02 Design decisions
 
+*Read this if you ask why something is done this way, or want to change a decision.*
+
 Each entry: decision, reason, alternatives not taken.
 
 | Decision | Reason | Alternatives considered |

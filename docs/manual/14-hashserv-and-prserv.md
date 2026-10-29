@@ -1,5 +1,7 @@
 # 14 Hash equivalence server and PR server
 
+*Read this if you deploy or wire the hash equivalence or PR server.*
+
 Status: **decided 2026-10-23**, not yet deployed. The cache trial (chapter 05, "Shared cache") works without either
 server. The container image for both servers is the `wrynose` branch of `dl9pf/docker-yp-prserv` (bitbake 2.18).
 

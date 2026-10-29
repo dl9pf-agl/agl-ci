@@ -1,5 +1,7 @@
 # 07 Compliance mapping
 
+*Read this if you answer an audit or compliance question.*
+
 Status: **planned**. Rule: only claims that are evidenced by a committed artifact or a check.
 
 | Framework | Requirement area | Evidence (target) |

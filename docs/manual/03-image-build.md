@@ -1,5 +1,7 @@
 # 03 Image build and reproducibility
 
+*Read this if you bump a pin, reproduce an image digest or debug the image build.*
+
 Status: builder reproducibility **tested locally** (two cold `--no-cache` builds, identical OCI archive); the CI run and the runner image are **in use** (`images.yml` green on `main`; the hosts run the pinned runner digest).
 
 ## Pins

@@ -1,5 +1,7 @@
 # 12 Repository hardening
 
+*Read this if you change repository, ruleset or organisation settings.*
+
 Status: files and `scripts/github-settings.sh` **implemented**; settings applied on 2026-10-22; later changes are in "Settings log" at the end.
 
 ## What is in the repo

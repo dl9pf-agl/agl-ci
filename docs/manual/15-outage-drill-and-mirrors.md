@@ -1,5 +1,7 @@
 # 15 Outage drill, mirrors and open items
 
+*Read this if you work on mirrors, offline builds or outage drills, or look for what is still open.*
+
 Status: the fetch drill (A) ran on real bitbake; the web server, pull sync, git mirrors, TLS options, pruning, hash server wiring and the uninative check are written and tested as described below. Not done: the full offline drill B, drill C, and a mirror fed from a second machine. The open-items table at the end is the single list of what is still missing.
 
 Contents: Requirement; What a CI build depends on; The drill (offline, from the mirror alone); First drill results and uninative; Mirrors in the build path (fetch mode, mirror design, web server, transport, consumer settings M4, git mirrors M6, sync to a download server M3, trying it on one host); Folder growth and pruning; Open items.
@@ -59,7 +61,9 @@ It is the way to test a mirror that is not published yet. Once the production mi
 as the default in the distro configuration or a kas fragment (a public site for AGL; a member may keep a private one and
 override it), and the variable is no longer needed. A GitHub run log is public in a public repo and shows the host name;
 delete the run afterwards if the host is not meant to be known. Tested through GitHub on 2026-10-28 (trusted pool,
-`agl-image-minimal` on qemux86-64, 4.5 minutes, 0 failures). By hand
+`agl-image-minimal` on qemux86-64, 4.5 minutes, 0 failures); that run is no longer in the run list of `meta-agl`, so this result cannot be
+re-checked there (repeat the drill to confirm it). The offline `fetchall` drill through GitHub is still visible: run 40556908726 of
+2026-10-27, four images, 3.7 to 3.9 minutes each, 0 fetch failures. By hand
 or on a desk: `AGL_MIRROR_URL=http://host:8080 ci/scripts/drill.sh --machine M --features F --target T --mode mirror`.
 
 ## First drill results (2026-10-26, meta-agl, qemux86-64)
@@ -125,7 +129,7 @@ read the mirror over HTTPS through the same `PREMIRRORS` / `SSTATE_MIRRORS` sett
 a clean rebuild (T2) use the same URL. One mechanism for every consumer. Downloads are protected by the `SRC_URI`
 checksums; sstate objects have no integrity check, which is why only the trusted pool may write what is served.
 
-### Web server (M1)
+#### Web server (M1)
 An nginx container, `kit/mirror/run.sh` with `kit/mirror/nginx.conf`, image pinned by digest. It
 mounts `$CACHE_DIR/dl` and `$CACHE_DIR/sstate` read-only (enforced by the kernel) and serves them as `/dl/` and
 `/sstate/` and, when `$CACHE_DIR/git` exists, `/git/` (bare layer mirrors), nothing else; it runs unprivileged with a read-only root, no capabilities and `no-new-privileges`. Served:
@@ -134,7 +138,7 @@ tarballs, `git2_*.tar.gz`, `uninative/<sha256>/...`, sstate objects and their `.
 and dotfiles; directory listings are off (403) and every method except `GET` and `HEAD` returns 405. Tested with a fake
 cache tree on 2026-10-26. Start: `kit/mirror/run.sh` (env `CACHE_DIR`, `PORT`, default 8080).
 
-### Transport: plain HTTP, HTTPS terminator, own TLS
+#### Transport: plain HTTP, HTTPS terminator, own TLS
 Three modes:
 
 (1) **Plain HTTP, the default** and what the development and test setup uses: no TLS variable, nothing changes. Fine for the
@@ -163,7 +167,7 @@ Any other web server works if it follows the same rules (Apache:
 (`sstate/corei7-64/...`); the consumer URL in M4 must contain `${DEFAULTTUNE}`. Hash equivalence: read-write port only
 for the trusted pool, read-only port public (chapter 14).
 
-### Consumer settings (M4)
+#### Consumer settings (M4)
  `kas/local/mirrors.yml` in agl-ucb is included by the engine when `AGL_MIRROR_URL` is set (an
 http(s) URL without a trailing slash; the engine strips one and refuses other schemes). It puts `$AGL_MIRROR_URL/dl/` in
 front of the upstream URL of every recipe (`PREMIRRORS` for git, gitsm, ftp, http, https; the uninative tarball is found
@@ -176,7 +180,7 @@ misses through a URL. AGL's own `MIRRORS` in `agl.conf` stay as the last line. A
 `download.automotivelinux.org/AGL/mirror/` (and `sstate-mirror/master/<tune>/`) answers today; it is not used as a primary
 and whether its sstate objects match our hashes is not checked.
 
-### Git mirrors for the layers (M6)
+#### Git mirrors for the layers (M6)
  kas clones the layers (oe-core, meta-openembedded, the AGL layers: 18 repositories in
 agl-ucb, 23 with the layer feature fragments) from github.com, git.yoctoproject.org and git.openembedded.org, so a clean checkout needs
 them. `kit/mirror/git-repos-from-kas.py <dirs>` lists the URLs from the kas files; `kit/mirror/git-mirrors.sh` keeps bare mirrors of
@@ -194,7 +198,7 @@ puts a line first that maps `AGL_PIN_URL` (for a fork pull request the fork) to 
 other layers use the mirror (tested with real kas: without that line the checkout fails with "repository ... not found"). Not
 done: the first clone in `checkout.sh` of the workflow uses the original URLs (the mirror drill covers the sources, not yet this clone).
 
-### Order of reports and sync rules
+#### Order of reports and sync rules
 **Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
 `sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.
 A consumer that gets a unihash without its object misses and rebuilds that task; without hashserv it would miss as well,
@@ -210,7 +214,7 @@ daemon in a container (`kit/mirror/rsyncd.sh`), filters as above, every few minu
 build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
 timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
 
-### How the download server gets the cache (M3)
+#### How the download server gets the cache (M3)
  No account, key or password on either side, and the download server never gets
 a login on a build host. Each trusted build host runs a read-only rsync daemon in a container (`kit/mirror/rsyncd.sh`); the
 download server pulls with `kit/mirror/pull-sync.sh`.
@@ -234,7 +238,10 @@ skips an area that is not offered and writes `LAST_SYNC`; bad addresses and URLs
 of the allowed address did not take effect in rsync 3.5, so `rsyncd.sh` assembles the config in the container instead. Not
 tested: two hosts and a real private network or VPN, the volume of a real sstate tree, and the container with published ports
 (the test used host networking).
-### Trying it on one host
+Decision recorded: the first draft pulled over ssh with an `rrsync` key of root; it was dropped, because a key to a root account
+on a build host is not acceptable even when restricted.
+
+#### Trying it on one host
  `kit/mirror/sync-selftest.sh` runs the whole chain on the trusted host before the download server is a
 separate machine: daemon (container `agl-rsyncd-test`, published on 127.0.0.1) -> pull as the normal user with the client of the
 builder image into a scratch tree (`~/agl-sync-selftest`) -> an nginx container on that tree (`agl-mirror-test`, port 18080) ->
@@ -247,9 +254,8 @@ port mapping makes the daemon see the address of the bridge gateway, not 127.0.0
 lines printed at the end show what the daemon saw. A separate download server comes from its own address, which is what
 `RSYNCD_ALLOW` is for. Tested locally with host networking (`SELFTEST_NETWORK=host`); the default bridge path (published
 port, gateway address) is not tested here and is what the first run on the trusted host shows.
-Decision recorded: the first draft pulled over ssh with an `rrsync` key of root; it was dropped, because a key to a root account
-on a build host is not acceptable even when restricted.
 
+#### Build order
 Steps: 1 this design; 2 kit pools (`POOL`, `SLOTS`, `MIRROR_URL`, done in the kit); 3 routing in `layer-ci.yml` (done: fork pull
 requests to `agl-fork`, everything else to `agl-pr`); 4 nginx container on this host (`kit/mirror`, done; TLS optional); 5 consumer settings (M4); 6 hashserv wiring
 (M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_ALLOWED_NETWORKS`; done, `drill.sh --mode mirror`); 8 pull sync to a separate

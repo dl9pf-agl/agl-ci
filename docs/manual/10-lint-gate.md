@@ -1,5 +1,7 @@
 # 10 Lint and security gate
 
+*Read this if lint blocks you or you change the lint tools.*
+
 Status: **in use**. `lint` is the required check of the `main` ruleset of agl-ci; local runs verified (clean tree passes; a deliberately
 bad `pull_request_target` workflow with expression injection fails in `enforce`, passes in `report`).
 

@@ -1,5 +1,7 @@
 # 01 Architecture
 
+*Read this if you want the big picture before any other chapter.*
+
 Status: **in use**. `images.yml` ran green on the latest pushes to `main` (checked 2026-10-29): build twice and compare, scan, smoke, publish and sign, verify on a fresh runner.
 
 ## Components

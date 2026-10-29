@@ -1,5 +1,7 @@
 # 04 Signing, attestation, verification
 
+*Read this if you verify an image, or check how images and releases are signed.*
+
 Status: scripts tested locally with a stubbed cosign and real syft (SBOM 345 packages); keyless signing is **in use**: the publish job signs, a fresh runner verifies, and `kit/deploy.sh` runs `cosign verify` on both hosts before using an image. Release-engineer signature: see chapter 06.
 
 ## What is produced per image digest

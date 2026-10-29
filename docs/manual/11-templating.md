@@ -1,5 +1,7 @@
 # 11 Templating and portability
 
+*Read this if you adopt agl-ci in another organisation or on another forge.*
+
 Status: requirement and target structure **decided**; refactor mostly done (`policy/project.env`, `scripts/publish-image.sh`, `scripts/sign-image.sh`, `scripts/verify-release.sh`); remaining items below.
 
 ## Requirement

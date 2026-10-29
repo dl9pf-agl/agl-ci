@@ -1,5 +1,7 @@
 # 06 Release engineer guide
 
+*Read this if you sign releases, rotate keys or hand over the release role.*
+
 Status: **untested on real hardware** (commands taken from the cosign docs; run the dry-run in section 9
 before the first real release).
 
