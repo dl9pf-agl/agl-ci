@@ -9,7 +9,7 @@ description: How the AGL layer CI works (agl-ci repo, dl9pf-agl org) - reusable 
 `dl9pf-agl/{agl-ucb (kas config, branch master), meta-agl, meta-agl-demo, meta-agl-devel (master), agl-ci (main)}`.
 All CI logic is in agl-ci. The other four hold a ~12-line caller `.github/workflows/ci.yml` calling
 `dl9pf-agl/agl-ci/.github/workflows/layer-ci.yml@<40-char SHA> # comment` (inputs `repo`, `tier`, `ucb_ref`, `kas_exec`)
-plus their own `ci/build-matrix.yaml`. Bump the SHA after every agl-ci change (SHA pinning is the policy; as a setting it is on in agl-ci only, see agl-ci-trust-and-security; Dependabot).
+plus their own `ci/build-matrix.yaml`. Bump the SHA after every agl-ci change (`sha_pinning_required` is on for all five repos: a run with an unpinned `uses:` fails at start; Dependabot).
 `job.workflow_sha` / `job.workflow_repository` give the engine ref at runtime.
 
 ## Rules (user decisions)
