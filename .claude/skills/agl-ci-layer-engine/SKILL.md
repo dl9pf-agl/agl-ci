@@ -42,3 +42,10 @@ Matrix tiers: `push-pr | nightly | release | dispatch`. Digests: `ci/builder.dig
 - builder entrypoint must be mode 0755 (`COPY --chmod=0755`), else `[FATAL tini] exec /entrypoint.sh failed: Permission denied`.
 - Cold Yocto build needs ~100-150 GB in /var/lib/docker; pilot target `agl-image-minimal` qemux86-64, others `tiers: [dispatch]` first.
 - Next after pilot: cache pool (`AGL_SSTATE_DIR`, `AGL_DL_DIR`; agl-pr RO, agl-release RW), copy callers to demo/devel/agl-ucb.
+
+## State since the pilot (2026-10)
+- Generated pin writes the repo under test under `repos:` **and** `overrides:`; the matrix job fails if the tree is not at the commit under test (`agl-ci-trust-and-security`).
+- `_matrix.py` validates matrix files as untrusted input; shared names in `ci/matrix-defaults.yaml` (`machine_sets`, `tier_presets` with `machine_tiers`); `needs:` builds demo after meta-agl and devel after demo (`AGL_SCOPE`).
+- meta-agl, -demo, -devel float on their branch; `resolved-pins.sh` writes the release pin (`agl-ci-release-and-pins`).
+- Labels in use: `agl-pr` (trusted), `agl-fork` (untrusted), `agl-kvm` reserved; `agl-release` was dropped. Build job limit 24 h. Reading runs: `agl-ci-run-triage`; hosts: `agl-ci-hosts-and-pools`; caches: `agl-ci-mirror-and-cache`.
+
