@@ -245,6 +245,17 @@ Lesson (2026-10-22): the first version requested the JIT config before preparing
 - Runner container: non-root, default caps, `seccomp=unconfined` (bitbake `unshare()`).
 - Bind mounts besides the per-job workspace volume: only `CACHE_DIR` (read-write; one pool per host). The mirror web server mounts it read-only.
 - Never run `pull_request_target` workflows on this runner.
+- **Job-started hook.** The runner image sets `ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/agl-hooks/job-started.sh` (root-owned, outside the
+  runner directory; source `docker/runner/job-started.sh`). GitHub runs it before the first step of every job and fails the job when it
+  exits non-zero. On a trusted host (`run-loop.sh` passes `AGL_POOL=$POOL`; unset counts as trusted) it refuses every event
+  `pull_request*` whose head repository is not the repository itself, including a deleted fork, and an event it cannot read
+  (fail closed). It exists because the workflow file of a fork pull request is the fork's own and can name the label `agl-pr` itself.
+  An untrusted host accepts everything; push, schedule, dispatch and release are not affected. A refused job shows `agl-hook: job
+  refused: ...` in the `Set up runner` log. Tested: 16 cases in `docker/runner/job-started_test.sh` (run by `scripts/lint.sh`, shown to
+  fail on three broken copies of the hook) and in the image smoke test. Not tested yet: on a real runner (needs the image published,
+  `kit/runner.digest` bumped and the host updated), in particular that `GITHUB_EVENT_NAME` and `GITHUB_EVENT_PATH` are set when the hook
+  runs (the docs say hooks get the default variables and the payload); if they are not, every job on the trusted host fails at once, which is
+  visible and safe. Run `runner-smoke.yml` and a same-repo pull request after the first update.
 
 ## Open points
 `/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested. (The old bare-host test runner

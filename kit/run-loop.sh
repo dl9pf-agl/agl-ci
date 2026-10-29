@@ -66,6 +66,7 @@ while :; do
   [ "${DIND:-1}" = 1 ] && run+=(--network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" -e KAS_CONTAINER_ENGINE=docker -v "agl-w$slot:$WS")
   [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" "${cache_env[@]}")
   run+=("${hs_env[@]}")
+  run+=(-e AGL_POOL="${POOL:-trusted}")   # read by the job-started hook of the runner image (trusted: refuses fork pull requests)
   t0=$(date +%s)
   "${run[@]}" "$RUNNER_IMAGE" || echo "runner container exited non-zero" >&2
   if [ $(($(date +%s) - t0)) -lt 30 ]; then   # died at once: never served a job; drop the registration, back off

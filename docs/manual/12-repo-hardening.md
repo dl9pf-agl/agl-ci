@@ -23,8 +23,9 @@ Layer repos (2026-10-23): `meta-agl` has the same ruleset (without the repo-leve
 caller workflow), applied with `CHECK='ci / result' ONLY_RULESET=1 scripts/github-settings.sh dl9pf-agl/meta-agl`.
 `ONLY_RULESET=1` leaves the other repository settings alone; they are not applied to `meta-agl` yet (merge methods,
 secret scanning, push protection, private vulnerability reporting). Full-SHA pinning is on for all five repos since 2026-10-29.
-`meta-agl-demo`, `meta-agl-devel` and `agl-ucb` get the ruleset together with their caller workflow, because a required check
-that never reports blocks every merge; they still allow merge and squash commits.
+`meta-agl-demo`, `meta-agl-devel` and `agl-ucb` have the ruleset since 2026-10-29 (`CHECK='ci / result'`, for agl-ucb `CHECK='lint / lint'`,
+both with `ONLY_RULESET=1`), after their caller and lint workflow reported; their repo-level merge settings still allow merge and squash
+commits, the ruleset alone limits the method to rebase.
 - Secret scanning and push protection on; private vulnerability reporting on.
 - Actions: full-SHA pinning required; fork-PR workflows need approval for all external contributors; default
   `GITHUB_TOKEN` read-only; Actions cannot approve PRs.
@@ -99,3 +100,4 @@ Cost: a multi-hour cold build per queued PR; with the warm cache about 25 minute
 | 2026-10-22 | Settings of `agl-ci` applied with `scripts/github-settings.sh`: `main` ruleset (pull request, `lint`), secret scanning, push protection, full-SHA pinning, fork-PR approval, read-only token |
 | 2026-10-23 | Merge strategy: rebase only (ruleset and repo settings); `meta-agl` gets the ruleset with `ci / result` |
 | 2026-10-29 | Full-SHA pinning (`sha_pinning_required`) switched on for `agl-ucb`, `meta-agl`, `meta-agl-demo`, `meta-agl-devel` after a scan of all workflows (9 files, default branches and open pull request heads) found no unpinned `uses:`; the org-level setting stays off. Whether to keep the update churn is to be decided later |
+| 2026-10-29 | `main` ruleset (pull request required, rebase only, no force-push or deletion, 0 approvals, no bypass) added to `agl-ucb` (required check `lint / lint`), `meta-agl-demo` and `meta-agl-devel` (`ci / result`) with `ONLY_RULESET=1`; all five repos now have one |

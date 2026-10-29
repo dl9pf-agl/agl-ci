@@ -12,9 +12,8 @@ Status: **planned**. Rule: only claims that are evidenced by a committed artifac
 | EU CRA | SBOM, vulnerability handling, secure by default | SPDX SBOM per image, `SECURITY.md`, pin-bump process |
 | UNECE R155 / ISO 21434 | Supplier tool integrity, cybersecurity management of the build chain | this manual, hand-over log, key registry |
 
-Gaps to close before claiming any of the above: signed commits, rulesets for the layer repos other than `meta-agl`
-(`agl-ucb`, `meta-agl-demo`, `meta-agl-devel` have none), a team in CODEOWNERS and required reviews once there is a second
-engineer; decide the SLSA L3 generator. (`SECURITY.md`, Scorecard, CODEOWNERS, Dependabot and the `main` ruleset of agl-ci exist.)
+Gaps to close before claiming any of the above: signed commits, a team in CODEOWNERS and required reviews once there is a second
+engineer; decide the SLSA L3 generator. (`SECURITY.md`, Scorecard, CODEOWNERS, Dependabot and the `main` ruleset of all five repos exist.)
 
 ## Release report contents (planned, `report.md` / `report.html`)
 Completeness; provenance (commit, workflow, runner type, pins and diff to previous release, signature table);
