@@ -89,7 +89,49 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
   are published. On one test host the jobs reach the container through the host's own address (the per-job Docker
   networks are created afresh, so the bridge address is not stable); there is then no isolation between PR and release
   jobs, as with the cache trial. Docker publishes around ufw and firewalld: use the bind addresses or the `DOCKER-USER`
-  chain.
+  chain. **`ufw allow` or `ufw deny` has no effect on a published port.** When the jobs reach the container through the host's own
+  address (the test setup above), the read-write ports must be kept off the outside by hand. Only the read-only ports 9292 and 9494 may be
+  reachable from everywhere. The rule is spelled out here on purpose; no script applies it for you.
+  1. Find the external interface: `ip route get 1.1.1.1` (the name after `dev`; `enp0s31f6` on the trusted test host).
+  2. Before the container starts, drop read-write traffic that arrives on that interface:
+     `iptables -I DOCKER-USER -i enp0s31f6 -p tcp -m multiport --dports 9191,9393 -j DROP`.
+     Packets from the job containers arrive on Docker bridges, not on that interface, and still pass. `--dports` is the port after
+     Docker's address translation, which is the same number here because the ports are published 1:1.
+  3. See that it is active: `iptables -S DOCKER-USER` must list that `-A DOCKER-USER -i enp0s31f6 ... -j DROP` line. Docker
+     adds `-A DOCKER-USER -j RETURN` at the end when its daemon starts; after a `ufw reload` that line is gone (seen on the trusted
+     test host), which changes nothing: a chain without a matching rule returns to the calling chain.
+  4. Make it survive a reboot and `ufw reload`. With ufw, append this block to the end of `/etc/ufw/after.rules` (after the last
+     `COMMIT`, as its own block), then `ufw reload`:
+     ```
+     *filter
+     :DOCKER-USER - [0:0]
+     -A DOCKER-USER -i enp0s31f6 -p tcp -m multiport --dports 9191,9393 -j DROP
+     COMMIT
+     ```
+     Repeat step 3 after `ufw reload` and after the next reboot. (Seen on the trusted test host: the rule was still listed after
+     `ufw reload`. A reboot has not been checked yet.)
+  5. Let the job containers in. They reach the server through the host's own address, which Docker does not translate for them, so the
+     packet lands on the host and ufw (default deny incoming) drops it silently. Only the outside is exempt, because Docker forwards
+     it past ufw. Allow the address pools that the per-job networks come from, and nothing wider, for the ports the builds use.
+     Docker's default pools are `172.17.0.0/16` to `172.31.0.0/16` and then `192.168.0.0/16` in `/20` pieces. **On the trusted test
+     host the per-job networks were `192.168.48.0/20` and the like, not 172.x**: with only the 172 rule the builds got
+     `Error contacting Hash Equivalence Server ...: [Errno 110]` (a timeout, because a drop is silent). Find your subnets with
+     `for n in $(docker network ls --format '{{.Name}}' | grep '^agl-n'); do docker network inspect $n --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'; done`,
+     and see who is dropped with `journalctl -k | grep 'UFW BLOCK' | grep 'DPT=9393'` (`SRC=` is the container, `IN=br-...` its network):
+     ```
+     ufw allow from 172.16.0.0/12 to any port 9494 proto tcp
+     ufw allow from 172.16.0.0/12 to any port 9393 proto tcp
+     ufw allow from 192.168.0.0/16 to any port 9494 proto tcp
+     ufw allow from 192.168.0.0/16 to any port 9393 proto tcp
+     ```
+     (9292 and 9191, the prserv ports, only when something uses them. A host with its own `default-address-pools` in
+     `/etc/docker/daemon.json` needs those ranges instead.)
+  6. Check, in this order. **From inside a running slot, not from a plain `docker run`**: a plain container uses the default bridge
+     (172.17.x), which passes while the per-job networks (192.168.x here) are still blocked, as happened on the test host:
+     `docker exec agl-r1 bash -c 'timeout 5 bash -c "exec 3<>/dev/tcp/<host address>/9393" && echo open || echo closed'` and
+     `docker exec agl-d1 sh -c 'nc -z -w 5 <host address> 9393 && echo open || echo closed'` (the runner and the Docker sidecar of
+     slot 1): both open. Same for 9494. From a machine outside: `9393` must time out, `9494` must open. If `9393` opens from outside,
+     stop the container at once.
 - Check from a job container (no tools needed): `bash -c 'exec 3<>/dev/tcp/<host>/9494 && echo open'`. A real check
   with the client library needs bitbake (`external/bitbake` in a CI tree): `hashserv.create_client("<host>:9494").ping()`
   returns `{'alive': True}`.
