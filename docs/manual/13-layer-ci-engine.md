@@ -65,6 +65,12 @@ image, which contains kas and the Yocto host tools). Everything goes through `ka
 
 `mode` input: `build` (default) or `drill` (chapter 15); `pull_request` always runs `build`.
 
+## Job time limit
+The `build` job has `timeout-minutes: 1440` (24 h). The first build of an image on an empty cache is cold: `agl-image-minimal` took
+4h29, and two cold demo images (`agl-ivi-demo-flutter`, `agl-ivi-demo-qt`, built side by side on the two slots of the trusted host)
+did not finish in the former 10 h and were cancelled. Tasks that finished are kept in the shared sstate, so a re-run resumes where
+the cancelled one stopped and a warm build takes minutes. A job that hangs ties up a slot for the whole limit.
+
 ## Trust rule for the tier
 The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
 share, where the job runs and what it may write. For `pull_request` events the workflow file, including the caller's
