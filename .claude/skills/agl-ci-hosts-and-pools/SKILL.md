@@ -32,4 +32,4 @@ Verified behaviour from the kit and from running it. Chapter 05 of `docs/manual`
 - The trusted host also runs the mirror web server (`./kit/mirror/run.sh`, container `agl-mirror`); restart it after an update that changes `kit/mirror/`.
 
 ## Before you change the kit
-Shellcheck, checkbashisms and `bash -n` every script (`scripts/lint.sh`). Keep the manual in the same commit. Never commit a host address (the development mirror IP is temporary and private to the dev cycle).
+Run `scripts/lint.sh` (actionlint, zizmor, shellcheck on the scripts, the matrix test) and, by hand, `checkbashisms` and `bash -n` (not part of lint.sh). Keep the manual in the same commit. Never commit a host address (the development mirror IP is temporary and private to the dev cycle).

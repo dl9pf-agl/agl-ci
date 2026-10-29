@@ -1,6 +1,6 @@
 # 01 Architecture
 
-Status: workflow and Dockerfiles **untested** (first run pending).
+Status: **in use**. `images.yml` ran green on the latest pushes to `main` (checked 2026-10-29): build twice and compare, scan, smoke, publish and sign, verify on a fresh runner.
 
 ## Components
 - **agl-ci repo** (this repo): the only place with pipeline logic. Layer repos only call it.

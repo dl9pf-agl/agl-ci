@@ -16,7 +16,7 @@ plus their own `ci/build-matrix.yaml`. Bump the SHA after every agl-ci change (`
 - KISS/ponytail, reproducible, templatable, portable to GitLab/Forgejo/desk. Keep `docs/manual` current in the same commit.
 - Layer checkout goes through kas, never a user-facing script. User flow: `git clone agl-ucb; scripts/aglsetup.sh -m qemux86-64`.
 - Only `pull_request`, never `pull_request_target`; no secrets in PR builds; fork PRs need approval (env `agl-ci-build`).
-- Only the `result` job is the required check. Runner labels: `agl-pr` (default), `agl-release` (planned, RW cache), `agl-kvm` (reserved).
+- Required check: `ci / result` (set on meta-agl; the ruleset of agl-ci requires `lint`; agl-ucb, meta-agl-demo and meta-agl-devel have no ruleset yet). Runner labels in use: `agl-pr` and `agl-fork`; `agl-kvm` is reserved; `agl-release` is only listed in `.github/actionlint.yaml`, no workflow or host uses it.
 - The user merges PRs. Never operate on the user's server; give commands.
 
 ## kas 5.5 facts (tested)
@@ -40,12 +40,12 @@ Matrix tiers: `push-pr | nightly | release | dispatch`. Digests: `ci/builder.dig
 ## Gotchas seen
 - hosted Python 3.12: `pip --require-hashes` fails on unpinned transitive deps -> run in the builder image.
 - builder entrypoint must be mode 0755 (`COPY --chmod=0755`), else `[FATAL tini] exec /entrypoint.sh failed: Permission denied`.
-- Cold Yocto build needs ~100-150 GB in /var/lib/docker; pilot target `agl-image-minimal` qemux86-64, others `tiers: [dispatch]` first.
-- Next after pilot: cache pool (`AGL_SSTATE_DIR`, `AGL_DL_DIR`; agl-pr RO, agl-release RW), copy callers to demo/devel/agl-ucb.
+- Space: the shared cache `CACHE_DIR` takes 50-150 GB (manual chapter 05); the workspace volume of a slot lives in Docker's data root.
+- The cache pool and the callers for demo, devel and agl-ucb exist now; see the state section below.
 
 ## State since the pilot (2026-10)
 - Generated pin writes the repo under test under `repos:` **and** `overrides:`; the matrix job fails if the tree is not at the commit under test (`agl-ci-trust-and-security`).
 - `_matrix.py` validates matrix files as untrusted input; shared names in `ci/matrix-defaults.yaml` (`machine_sets`, `tier_presets` with `machine_tiers`); `needs:` builds demo after meta-agl and devel after demo (`AGL_SCOPE`).
 - meta-agl, -demo, -devel float on their branch; `resolved-pins.sh` writes the release pin (`agl-ci-release-and-pins`).
-- Labels in use: `agl-pr` (trusted), `agl-fork` (untrusted), `agl-kvm` reserved; `agl-release` was dropped. Build job limit 24 h. Reading runs: `agl-ci-run-triage`; hosts: `agl-ci-hosts-and-pools`; caches: `agl-ci-mirror-and-cache`.
+- Labels in use: `agl-pr` (trusted), `agl-fork` (untrusted), `agl-kvm` reserved; `agl-release` is unused. Build job limit 24 h. Reading runs: `agl-ci-run-triage`; hosts: `agl-ci-hosts-and-pools`; caches: `agl-ci-mirror-and-cache`.
 

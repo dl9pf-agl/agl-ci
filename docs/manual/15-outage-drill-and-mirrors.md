@@ -1,7 +1,6 @@
 # 15 Outage drill, mirrors and open items
 
-Status: drill script **tested with a stand-in `kas` only** (flow, exit codes, miss list); not yet run with real bitbake.
-Mirrors are **decided, not built**. The open-items table at the end is the single list of what is still missing.
+Status: the fetch drill (A) ran on real bitbake; the web server, pull sync, git mirrors, TLS options, pruning, hash server wiring and the uninative check are written and tested as described below. Not done: the full offline drill B, drill C, and a mirror fed from a second machine. The open-items table at the end is the single list of what is still missing.
 
 ## Requirement
 Builds must survive an upstream outage at three levels:
@@ -125,7 +124,7 @@ checksums; sstate objects have no integrity check, which is why only the trusted
 
 Web server (step 4): an nginx container, `kit/mirror/run.sh` with `kit/mirror/nginx.conf`, image pinned by digest. It
 mounts `$CACHE_DIR/dl` and `$CACHE_DIR/sstate` read-only (enforced by the kernel) and serves them as `/dl/` and
-`/sstate/`, nothing else; it runs unprivileged with a read-only root, no capabilities and `no-new-privileges`. Served:
+`/sstate/` and, when `$CACHE_DIR/git` exists, `/git/` (bare layer mirrors), nothing else; it runs unprivileged with a read-only root, no capabilities and `no-new-privileges`. Served:
 tarballs, `git2_*.tar.gz`, `uninative/<sha256>/...`, sstate objects and their `.siginfo`, range requests (`wget
 --continue`) and `HEAD`. Not served (404): `*.lock`, `*.tmp`, `*.done`, `hashserv.db*`, the `git2/` clone directories
 and dotfiles; directory listings are off (403) and every method except `GET` and `HEAD` returns 405. Tested with a fake
@@ -274,14 +273,14 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |
 | M10 | Break-glass procedure, YubiKey release signing, Sigstore offline bundles | open |
 | M11 | Pruning, quotas, monitoring, backups (hashserv DB, release artifacts) | sstate pruning script `kit/prune-cache.sh` written and tested on a fake tree (dry run by default; `dl/` is never pruned); quotas, alerts, backups, release retention open |
-| M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part and routing in `layer-ci.yml` done (`POOL`, chapter 05; chapter 13); an untrusted host to be provisioned and fork pull requests to be tested on it (user, then me) |
+| M12 | Production cache split: trusted hosts (`agl-pr`) and untrusted hosts (`agl-fork`, private cache, mirror over HTTPS) | kit part and routing in `layer-ci.yml` done (`POOL`, chapter 05; chapter 13); the untrusted host is provisioned (runner online, label `agl-fork`); fork pull requests still to be tested on it (needs a second GitHub account) |
 | M13a | Deploy the wrynose hashserv/prserv container (chapter 14, "Deployment on the build host") | image done and tested for liveness; deployment on the host: user |
 | M13b | Wire `BB_HASHSERVE` into the builds (trusted: read-write server; PR: `auto` + upstream read-only), selected by the runner pool | wiring done and tested against a local hash server (chapter 14); switched on by `HASHSERV_RW` / `HASHSERV_UPSTREAM` once the container (M13a) runs on the host |
 | M14 | Input mirror for image rebuild inputs | low |
 | M15 | Unverified claims to test: ~~kas with a present pinned commit and no network~~ (verified 2026-10-27: no remote contact); `own-mirrors` conversion; sstate prune without access times; `cosign verify --local-image` on a skopeo-made archive | open |
 | M16 | Off-site second copy of releases for T2 and T3 | decide later |
 | M17 | Release bundle for T3 (images, kernels, builder and runner OCI archives, sources, pins, SBOM, signatures, bundles, provenance, hashserv and prserv snapshot) | open |
-| M18 | Caller workflow, `ci/build-matrix.yaml` and ruleset (`CHECK='ci / result' scripts/github-settings.sh`, required check, rebase merge only) for `meta-agl-demo`, `meta-agl-devel` and `agl-ucb`; `meta-agl` already has them. The ruleset only goes on together with the caller (a required check that never reports blocks every merge). Callers of demo and devel have no schedule (the nightly of `meta-agl` builds them through `needs`) and no push trigger | matrices and callers written (shared names, chapter 13), branches not pushed yet |
+| M18 | Caller workflow, `ci/build-matrix.yaml` and ruleset (`CHECK='ci / result' scripts/github-settings.sh`, required check, rebase merge only) for `meta-agl-demo`, `meta-agl-devel` and `agl-ucb`; `meta-agl` already has them. The ruleset only goes on together with the caller (a required check that never reports blocks every merge). Callers of demo and devel have no schedule (the nightly of `meta-agl` builds them through `needs`) and no push trigger | matrices and callers pushed as meta-agl-demo#1 and meta-agl-devel#1 (shared names, chapter 13); their first cold builds are running (2026-10-29); no ruleset yet for agl-ucb, demo and devel |
 | M19 | Enable `yocto-check-layer` by default for the layers of `meta-agl-demo` and `meta-agl-devel` (`check_layers.default` in their matrices) | prepared but NOT active: the layers are listed, `default: []`. TODO: run `make validate CHECK_LAYERS="<layers>"` per layer, fix or waive what fails, then list the passing layers in `default`; one layer at a time is fine |
 | M20 | Written-out pin for releases: store `resolved-pins.yml` (`ci/scripts/resolved-pins.sh`) with every nightly and release artifact and use it as the pins file to rebuild; today only the job summary of the `matrix` job has it | script and job summary done; storing it in the release bundle (M17) open |
-| M21 | Restrict the trusted runners (`agl-pr`) to the reusable workflows of agl-ci: org runner group `agl-ci` (id 3) is workflow-restricted and empty, the runners sit in `Default`; make `kit/deploy.sh` take the runner group per pool (it hardcodes 1) | open (last item); first test how GitHub matches a SHA-pinned reusable workflow against an allowed entry, with a same-repo PR and a fork PR |
+| M21 | Restrict the trusted runners (`agl-pr`) to the reusable workflows of agl-ci: org runner group `agl-ci` (id 3) is workflow-restricted and empty, the runners sit in `Default`; make `kit/deploy.sh` take the runner group per pool (it hardcodes 1) | open (last item). The GitHub docs say custom runner groups need the Team plan; the org is on the free plan, yet group `agl-ci` (id 3) exists, so enforcement is unknown. Alternative that needs no plan: a job-started hook (`ACTIONS_RUNNER_HOOK_JOB_STARTED`) in the runner image that refuses a pull request from a fork on a trusted host. First test how GitHub matches a SHA-pinned reusable workflow against an allowed entry, with a same-repo PR and a fork PR |
