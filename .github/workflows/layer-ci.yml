@@ -144,7 +144,7 @@ jobs:
     needs: [matrix, approve]
     if: always() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0'
     runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
-    timeout-minutes: 600
+    timeout-minutes: 1440   # a cold build of a Qt or Flutter demo image does not fit in 10 h (two ran into the old limit); a re-run resumes from the sstate
     permissions: { contents: read }
     strategy:
       fail-fast: false
