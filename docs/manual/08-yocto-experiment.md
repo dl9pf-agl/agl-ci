@@ -1,5 +1,7 @@
 # 08 Yocto-built builder experiment
 
+*Read this if you wonder why the builder is not built with Yocto.*
+
 Status: **deferred** (decision 2026-10-22: YAGNI until upstream ships a builder container). Reference: Tim Orling, "Signed, Sealed, Delivered: Yocto Project Reference Containers"
 (OSS EU 2026). Uses `image-oci`, `OCI_LAYERS`, SPDX 3.0 SBOM from the build, cosign signing.
 

@@ -1,5 +1,7 @@
 # 05 Runner setup (Debian 13 host)
 
+*Read this if you set up, update, repair or retire a build host.*
+
 Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls and verifies the signed runner image;
 `kit/runner.digest` pinned to a verified publish). An untrusted host (label `agl-fork`) is online and the mirror web server
 (`kit/mirror/`) runs on the trusted host. The runbook below covers setup, daily use, reset and troubleshooting.
@@ -16,7 +18,9 @@ privileged `docker:dind` sidecar pinned by digest (`DIND_IMAGE` in `docker/pins.
 container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no sidecar, kas runs directly in the
 runner image and `/dev/kvm` goes straight to the container.
 
-## Steps
+## Before the first deploy (GitHub side and runner image)
+Done once per organisation. The commands on the host itself are in the Runbook below ("First setup").
+
 1. GitHub: org `dl9pf-agl`; Settings > Actions > General: fork PR workflows = *Require approval for all external
    contributors*; Runner groups > Default: allow public repositories (only after that); fine-grained PAT, owner
    the org, permission *Self-hosted runners: Read and write*.
@@ -29,31 +33,6 @@ runner image and `/dev/kvm` goes straight to the container.
    `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`, and for the pool `POOL`, `MIRROR_URL` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
-
-## Updating the runner
-Bump pins (chapter 03), merge, wait for publish+verify, put the new digest into `kit/runner.digest`, re-run
-`deploy.sh` on the host (it restarts nothing by itself: `systemctl restart agl-runner@N` between jobs).
-
-One command: `kit/update.sh [token-file]` does `git pull --ff-only`, `deploy.sh` with the stored `SLOTS` (2 when none is stored) and restarts
-all slots. Why `deploy.sh` copies `run-loop.sh` and the unit to `/opt` and `/etc/systemd`: systemd runs it as root, so
-it must not come from a checkout that a `git pull`, a branch switch or a non-root user can change. The copy is a
-root-owned snapshot of a reviewed commit; the cost is one `install` line. Alternative (rejected): `ExecStart`
-straight from the checkout, which makes every `git pull` an instant root-code change.
-
-## Shared cache (trial)
-`deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
-belong to uid 1001 (see "Host requirements": that is the runner user inside the image, not an account of the host).
-`run-loop.sh` bind-mounts it at the same path into the DinD sidecar and the runner container and exports
-`AGL_SSTATE_DIR=$CACHE_DIR/sstate`, `AGL_DL_DIR=$CACHE_DIR/dl`; the engine turns them into the kas fragments
-`sstate-shared.yml` and `dl-shared.yml` (chapter 13). The sidecar needs the mount too, because `kas-container` runs
-in the sidecar's daemon and resolves host paths there.
-
-Default (a trusted host, the trial decision of 2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
-risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
-equivalence database in `sstate/` (sqlite). The routing of fork pull requests to the untrusted pool exists now (see "Pools"; the caller of
-`meta-agl`, and those in the open pull requests of demo and devel, pin a `layer-ci.yml` that routes), so the trial exception ends for new runs; whether to rebuild the trusted cache
-from scratch once is still to be decided.
-Hash equivalence and PR servers: chapter 14. To empty the cache see "Reset and re-setup", step 4 (next build is cold). Size: expect 50-150 GB, check `df -h`.
 
 ## Pools (trusted and untrusted hosts)
 **A host serves one pool only; trusted and untrusted never share a physical server** (the privileged DinD sidecar and
@@ -86,6 +65,24 @@ tools only once the hosts run an image built from this change (`kit/update.sh`).
 GitHub-hosted runner instead (it then installs the tools per run). Tested: the image builds locally and the tools and the lint
 script of agl-ucb run in it. Tested on GitHub: the images workflow builds the image, and the `lint` job of agl-ucb pull requests
 runs on the trusted pool (`agl-pr`). Not tested: a fork pull request of agl-ucb on the untrusted pool.
+
+### Labels
+`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+
+## Shared cache (trial)
+`deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
+belong to uid 1001 (see "Host requirements": that is the runner user inside the image, not an account of the host).
+`run-loop.sh` bind-mounts it at the same path into the DinD sidecar and the runner container and exports
+`AGL_SSTATE_DIR=$CACHE_DIR/sstate`, `AGL_DL_DIR=$CACHE_DIR/dl`; the engine turns them into the kas fragments
+`sstate-shared.yml` and `dl-shared.yml` (chapter 13). The sidecar needs the mount too, because `kas-container` runs
+in the sidecar's daemon and resolves host paths there.
+
+Default (a trusted host, the trial decision of 2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
+risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
+equivalence database in `sstate/` (sqlite). The routing of fork pull requests to the untrusted pool exists now (see "Pools"; the caller of
+`meta-agl`, and those in the open pull requests of demo and devel, pin a `layer-ci.yml` that routes), so the trial exception ends for new runs; whether to rebuild the trusted cache
+from scratch once is still to be decided.
+Hash equivalence and PR servers: chapter 14. To empty the cache see "Reset and re-setup", step 4 (next build is cold). Size: expect 50-150 GB, check `df -h`.
 
 ## Host requirements and what the kit does not assume
 - **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
@@ -164,6 +161,16 @@ Untrusted host:
   under `$CACHE_DIR/dl` prints `200` (list the folder with `sudo`: it is root-only on the host).
 - A real job: a pull request or `workflow_dispatch` of the caller; first build on an empty cache is cold (`agl-image-minimal` about 4.5 hours; the Qt and Flutter demo images take 20 hours or more), the next one warm (about 25 to 30 minutes).
 
+### Updating the runner
+Bump pins (chapter 03), merge, wait for publish+verify, put the new digest into `kit/runner.digest`, re-run
+`deploy.sh` on the host (it restarts nothing by itself: `systemctl restart agl-runner@N` between jobs).
+
+One command: `kit/update.sh [token-file]` does `git pull --ff-only`, `deploy.sh` with the stored `SLOTS` (2 when none is stored) and restarts
+all slots. Why `deploy.sh` copies `run-loop.sh` and the unit to `/opt` and `/etc/systemd`: systemd runs it as root, so
+it must not come from a checkout that a `git pull`, a branch switch or a non-root user can change. The copy is a
+root-owned snapshot of a reviewed commit; the cost is one `install` line. Alternative (rejected): `ExecStart`
+straight from the checkout, which makes every `git pull` an instant root-code change.
+
 ### Daily use
 | Task | Command |
 |---|---|
@@ -226,6 +233,12 @@ A restart kills the job in progress (the first pilot build died this way). Check
 | `df` full | cache or Docker data | cache size 50-150 GB; `docker system df`; reset 2 and 4 |
 | Offline drill finds misses | cache cold or never fetched | chapter 15: fetch mode, then drill |
 
+## Failure behaviour (run-loop.sh)
+- Preparation fails (network, volume, sidecar not answering within ~3 min): cleanup, back off 30 s x failures (max 10 min), no GitHub call.
+- Runner container exits within 30 s (never served a job): its registration is deleted via the API, then back off.
+- A run longer than 30 s resets the backoff.
+Lesson (2026-10-22): the first version requested the JIT config before preparing the sidecar, so a failing engine created one stale runner registration every ~11 s (44 in 6 minutes).
+
 ## Security notes
 - The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.
@@ -236,12 +249,3 @@ A restart kills the job in progress (the first pilot build died this way). Check
 ## Open points
 `/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested. (The old bare-host test runner
 was removed from the org.)
-
-## Labels
-`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
-
-## Failure behaviour (run-loop.sh)
-- Preparation fails (network, volume, sidecar not answering within ~3 min): cleanup, back off 30 s x failures (max 10 min), no GitHub call.
-- Runner container exits within 30 s (never served a job): its registration is deleted via the API, then back off.
-- A run longer than 30 s resets the backoff.
-Lesson (2026-10-22): the first version requested the JIT config before preparing the sidecar, so a failing engine created one stale runner registration every ~11 s (44 in 6 minutes).
