@@ -17,9 +17,10 @@ description: How pins work across AGL CI and what a release needs - callers pinn
 
 Image digests change with every commit (`SOURCE_DATE_EPOCH` = last commit time), so a digest in a file refers to a published build, not to "the source".
 
-## Bump order (rebase-merge only: merging gives new SHAs)
+## Bump order (rebase-merge: merging gives new SHAs)
+Rebase-merge is the convention; the rulesets of agl-ci and meta-agl enforce it (`allowed_merge_methods` = rebase), agl-ucb, meta-agl-demo and meta-agl-devel have no ruleset yet and still allow merge and squash.
 1. Merge the agl-ci PR. 2. If `docker/` or `ci/scripts` changed the image: wait for `images` to publish and verify, PR the new digests. 3. PR the new agl-ci SHA into each caller (meta-agl first; its nightly builds demo/devel through `needs:`). 4. `./kit/update.sh` on hosts when the runner digest moved. 5. Rebase local branches onto the new SHAs. Check `gh pr view <n> --json state` and `git merge-base --is-ancestor origin/<base> HEAD` before every push.
-A push to a PR restarts its running jobs: do not push to a PR with a cold build in progress unless you intend that.
+A push to a PR branch **cancels** that PR's run in progress (`cancel-in-progress` for `pull_request` in `layer-ci.yml`): do not push to a PR with a cold build running unless you intend that.
 
 ## Floating layers and the release pin
 Because the three AGL layers float, a run is not described by the pins file alone. Each `matrix` job summary prints "Resolved pins of this run" (output of `ci/scripts/resolved-pins.sh`: `header: version: 22`, `overrides: repos: <name>: commit: <sha>` for every repo of the kas tree; offline via `kas for-all-repos`; needs a checked-out tree and the CI env `AGL_TREE`, `KAS_EXEC`, `AGL_PIN_*`).

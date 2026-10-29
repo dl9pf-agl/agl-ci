@@ -1,7 +1,6 @@
 # 13 Layer CI engine
 
-Status: engine imported and adapted; **tested locally with a stand-in `kas`** (setup, build, validate, matrix scope,
-both execution modes). Not yet run with real kas/bitbake; the GitHub workflow that calls it is the next step.
+Status: **in use** with real kas and bitbake: `meta-agl` builds on the trusted host (warm build 26-27 min, cold `agl-image-minimal` about 4h28), `meta-agl-demo` and `meta-agl-devel` have their first cold builds running (2026-10-29). Fork pull requests have not been run end to end yet.
 
 ## Origin
 Imported from the monolithic AGL CI repo (`ci/scripts`, `kas/ci-only.yml`, `kas/_validate-base.yml`) instead of writing a
@@ -67,7 +66,7 @@ image, which contains kas and the Yocto host tools). Everything goes through `ka
 
 ## Job time limit
 The `build` job has `timeout-minutes: 1440` (24 h). The first build of an image on an empty cache is cold: `agl-image-minimal` took
-4h29, and two cold demo images (`agl-ivi-demo-flutter`, `agl-ivi-demo-qt`, built side by side on the two slots of the trusted host)
+about 4h28 (268 min), and two cold demo images (`agl-ivi-demo-flutter`, `agl-ivi-demo-qt`, built side by side on the two slots of the trusted host)
 did not finish in the former 10 h and were cancelled. Tasks that finished are kept in the shared sstate, so a re-run resumes where
 the cancelled one stopped and a warm build takes minutes. A job that hangs ties up a slot for the whole limit.
 

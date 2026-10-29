@@ -1,6 +1,6 @@
 # 03 Image build and reproducibility
 
-Status: builder reproducibility **tested locally** (two cold `--no-cache` builds, identical OCI archive); CI run and runner image **untested**.
+Status: builder reproducibility **tested locally** (two cold `--no-cache` builds, identical OCI archive); the CI run and the runner image are **in use** (`images.yml` green on `main`; the hosts run the pinned runner digest).
 
 ## Pins
 `docker/pins.env` and `docker/requirements.txt` are the only inputs reviewers edit:

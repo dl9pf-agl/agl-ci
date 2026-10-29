@@ -12,7 +12,7 @@ Long form: manual chapters 14 and 15. Verified unless marked.
 Trusted host: its `CACHE_DIR` **is** the mirror (single writer: trusted pool). Untrusted host: private cache, reads the mirror via `AGL_MIRROR_URL` (`PREMIRRORS` / `SSTATE_MIRRORS`, `kas/local/mirrors.yml` in agl-ucb).
 
 ## Pieces in `kit/mirror/`
-- `run.sh` + `nginx.conf` + `locations.conf`: unprivileged nginx container, mounts `dl/` and `sstate/` read-only, serves `/dl/` and `/sstate/` only; `GET`/`HEAD` only; no listings; 404 for `*.lock *.tmp *.done hashserv.db* git2/` clones and dotfiles. Env `CACHE_DIR`, `PORT` (8080). Restart (`./kit/mirror/run.sh`) after changing it.
+- `run.sh` + `nginx.conf` + `locations.conf`: unprivileged nginx container, mounts `dl/` and `sstate/` (and `git/` when it exists) read-only, serves `/dl/`, `/sstate/` and `/git/` (bare layer mirrors for kas) only; `GET`/`HEAD` only; no listings; 404 for `*.lock *.tmp *.done hashserv.db* git2/` clones and dotfiles. Env `CACHE_DIR`, `PORT` (8080). Restart (`./kit/mirror/run.sh`) after changing it.
 - TLS is optional: default plain HTTP (dev network only); production = separate nginx + HTTPS terminator including `locations.conf`; optional in-container TLS (`TLS_CERT`/`TLS_KEY`, port 8443); `certbot.sh` for Let's Encrypt via container.
 - `rsyncd.sh` + `rsyncd.conf` + `pull-sync.sh`: a **read-only rsync daemon container** (read-only mounts, no credentials, `hosts allow`) lets another machine pull the cache. The config is assembled inside the container because `&include` did not apply `hosts allow`. No ssh key, no `rrsync`.
 - `git-mirrors.sh` + `git-repos-from-kas.py`: bare git mirrors of every repo kas fetches (`AGL_GIT_MIRROR=1` makes a build use them). TODO: scheduled mirror-only check after the nightly fetch.
@@ -22,7 +22,7 @@ Trusted host: its `CACHE_DIR` **is** the mirror (single writer: trusted pool). U
 ## Modes of the reusable workflow
 - `mode: fetch` (+ `tier: dispatch`): `ci/scripts/fetch.sh` runs `bitbake -k --runall=fetch <target>` with network on and `BB_GENERATE_MIRROR_TARBALLS=1`, writing `git2_*.tar.gz` (a bare `git2/` clone cannot be served over HTTP). Fill reads from the real upstream, never from our mirror (`PREMIRRORS=""` once the mirror is wired). Trusted events only.
 - `mode: drill` / `drill-mirror` (`drill.sh`): builds with upstream blocked (`BB_ALLOWED_NETWORKS`) to prove T1/T2/T3 survival: `fetchall` offline from `DL_DIR`, or `mirror` through `AGL_MIRROR_URL`. `drill-mirror` needs the repo variable `AGL_MIRROR_URL`; it is temporary for tests, delete after.
-- **uninative:** the tarball is a hidden network fetch (`DL_DIR/uninative/<sha256>/`). A nightly check must confirm it is cached and served; otherwise an offline build fails at the first recipe.
+- **uninative:** the tarball is a hidden network fetch into `DL_DIR/uninative/<sha256>/`. `fetch.sh` counts `uninative/*/*.tar.xz` and fails with "no uninative tarball" when there is none, so a fill cannot leave an incomplete mirror. The first scheduled run of that check is still to come; without the tarball an offline build fails at the first recipe.
 - Not covered by the fetch switch: npm, cargo, go, pip fetchers (drill B shows which recipes need more).
 
 ## Hash equivalence server

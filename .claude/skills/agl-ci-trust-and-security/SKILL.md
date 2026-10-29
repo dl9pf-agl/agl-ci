@@ -23,7 +23,7 @@ Verified in code or by test unless marked. Long form: manual chapters 05, 12, 13
 kas applies `overrides:` last; a later `repos:` commit does not beat an earlier override. The generated pin writes the repo under test under both `repos:` and `overrides:`, and the matrix job **fails if `tree/$REPO` is not at `AGL_PIN_SHA`** and warns on `count=0`. Without this, the first demo/devel PRs went green while building the pinned master (vacuous green).
 
 ## Pools, caches, secrets
-- Only `pull_request`, never `pull_request_target`. No secrets in PR builds. Env `agl-ci-build` gates the `approve` job for forks (reviewers not set yet: user task).
+- Only `pull_request`, never `pull_request_target`. No secrets in PR builds. The `approve` job (fork PRs only) uses environment `agl-ci-build`. It exists only in meta-agl (checked 2026-10-29) and has no required reviewers; elsewhere GitHub creates an unprotected one when the job first runs. So the approval policy `all_external_contributors` is the only gate today (user task: reviewers).
 - Trusted and untrusted never share a host. Only the trusted pool writes what is served as mirror; sstate objects have no integrity check, downloads are protected by `SRC_URI` checksums.
 - `HASHSERV_RW` never on an untrusted host (`deploy.sh` refuses); fork PRs may read an upstream hash server only.
 - Zero trust toward builders: no root key on a builder, the mirror sync is a **read-only rsync daemon container with read-only mounts and no credentials** (not a root ssh key). Do not reintroduce `rrsync`/ssh keys.
