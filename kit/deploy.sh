@@ -4,6 +4,8 @@
 #   sudo GH_TOKEN=ghp_... ./deploy.sh            # token from env
 #   sudo ./deploy.sh                             # prompts (hidden)
 # Optional env: GH_ORG (default dl9pf-agl) SLOTS (default 1) ENGINE (docker|podman, default auto)
+#               LINT_SLOTS (default 1; 0 = none): extra small slots that take lint and preparation jobs only, label agl-lint
+#               (trusted) or agl-fork-lint (untrusted; LINT_LABELS), LINT_MEM_LIMIT (4g) LINT_CPU_LIMIT (2); no cache, no hash server
 #               POOL (trusted | untrusted, default trusted): a host serves one pool only. trusted = same-repo PRs, nightly,
 #               push, release (label agl-pr); untrusted = fork PRs (label agl-fork). SLOTS = number of slots on this host.
 #               MIRROR_URL (untrusted hosts): where the trusted mirror is read, e.g. https://mirror.example/
@@ -16,10 +18,11 @@ set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
 # Settings stay as deployed before unless given, so that a plain update does not reset a host with its own paths or sizes.
-for v in GH_ORG ENGINE MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS; do
+for v in GH_ORG ENGINE MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS LINT_SLOTS LINT_MEM_LIMIT LINT_CPU_LIMIT; do
   [ -n "${!v:-}" ] || { val="$(old "$v")"; [ -z "$val" ] || printf -v "$v" '%s' "$val"; }
 done
-ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"
+ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"; LINT_SLOTS="${LINT_SLOTS:-1}"
+for v in SLOTS LINT_SLOTS; do [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "$v must be a number, got: ${!v}" >&2; exit 1; }; done
 
 # --- token: file argument, else env GH_TOKEN, else the token of the previous deploy, else a prompt
 if [ -n "${1:-}" ]; then GH_TOKEN="$(tr -d '[:space:]' < "$1")"
@@ -50,8 +53,8 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOK
 prev_pool="$(old POOL)"; [ -n "$prev_pool" ] || [ ! -f /etc/agl-runner/runner.env ] || prev_pool=trusted   # hosts from before pools are trusted
 POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"
 case "$POOL" in
-  trusted) default_labels=agl-pr ;;
-  untrusted) default_labels=agl-fork ;;
+  trusted) default_labels=agl-pr; default_lint_labels=agl-lint ;;
+  untrusted) default_labels=agl-fork; default_lint_labels=agl-fork-lint ;;
   *) echo "POOL must be trusted or untrusted" >&2; exit 1 ;;
 esac
 if [ -n "$prev_pool" ] && [ "$prev_pool" != "$POOL" ] && [ -z "${FORCE_POOL_CHANGE:-}" ]; then
@@ -79,9 +82,13 @@ HASHSERV_RW=$HASHSERV_RW
 HASHSERV_UPSTREAM=$HASHSERV_UPSTREAM
 MEM_LIMIT=${MEM_LIMIT:-24g}
 CPU_LIMIT=${CPU_LIMIT:-8}
+LINT_LABELS=${LINT_LABELS:-$default_lint_labels}
+LINT_MEM_LIMIT=${LINT_MEM_LIMIT:-4g}
+LINT_CPU_LIMIT=${LINT_CPU_LIMIT:-2}
 DIND=${DIND:-1}
 CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
 SLOTS=$SLOTS
+LINT_SLOTS=$LINT_SLOTS
 EOF
 umask 022
 # Cache layout, independent of the accounts on this host: the parent is root-only, so no other account (whatever its
@@ -112,9 +119,10 @@ printf "RUNNER_IMAGE=%s\nDIND_IMAGE=%s\n" "$image" "$DIND_IMAGE" >> /etc/agl-run
 
 # --- start
 systemctl daemon-reload
-for i in $(seq 1 "$SLOTS"); do systemctl enable --now "agl-runner@$i.service"; done
+total=$((SLOTS + LINT_SLOTS))   # slots 1..SLOTS serve the pool label, the rest are lint slots (run-loop.sh)
+for i in $(seq 1 "$total"); do systemctl enable --now "agl-runner@$i.service"; done
 for u in $(systemctl list-units --all --plain --no-legend 'agl-runner@*.service' | grep -o 'agl-runner@[0-9]*\.service' | sort -u); do   # slots no longer wanted
-  n="${u#agl-runner@}"; n="${n%.service}"; [ "$n" -le "$SLOTS" ] || systemctl disable --now "$u"
+  n="${u#agl-runner@}"; n="${n%.service}"; [ "$n" -le "$total" ] || systemctl disable --now "$u"
 done
 echo "done. status: systemctl status agl-runner@1 ; logs: journalctl -fu agl-runner@1"
-echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners ($POOL pool, $SLOTS slots, label: ${LABELS:-$default_labels})"
+echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners ($POOL pool, $SLOTS slots, label: ${LABELS:-$default_labels}; $LINT_SLOTS lint slots, label: $LINT_LABELS)"

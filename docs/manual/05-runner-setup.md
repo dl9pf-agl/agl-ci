@@ -30,7 +30,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
    Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT`,
-   `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`, and for the pool `POOL`, `MIRROR_URL` (see "Pools").
+   `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -67,7 +67,21 @@ script of agl-ucb run in it. Tested on GitHub: the images workflow builds the im
 runs on the trusted pool (`agl-pr`). Not tested: a fork pull request of agl-ucb on the untrusted pool.
 
 ### Labels
-`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-lint` and `agl-fork-lint`: the lint slots of a trusted and of an untrusted host (see "Lint slots"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+
+## Lint slots
+Lint and preparation jobs (`repo-lint.yml`, used by agl-ucb) must not wait behind a cold build that holds both pool slots for a day. So
+every host runs `LINT_SLOTS` extra slots (default **1**, 0 turns them off), numbered after the pool slots: with `SLOTS=2` and `LINT_SLOTS=1`
+the units are `agl-runner@1` and `@2` (label `agl-pr`) and `@3` (label `agl-lint`). An untrusted host's lint slot has the label `agl-fork-lint`.
+
+A lint slot is the same single-use runner with its own limits and less access: `LINT_MEM_LIMIT` (default 4g), `LINT_CPU_LIMIT` (default 2),
+**no cache directory, no mirror URL, no hash server** (`run-loop.sh`, block "slot role"; tested by `kit/run-loop_test.sh`). It carries no pool
+label, so a build cannot land on it, and a lint job cannot land on a pool slot. The pool boundary is unchanged: `AGL_POOL` is passed as before,
+so the job-started hook still refuses fork pull requests on a trusted host's lint slot. `LINT_LABELS` overrides the label (not remembered by an update).
+
+`repo-lint.yml` picks `agl-lint` for same-repo pull requests, push and dispatch and `agl-fork-lint` for pull requests from forks. A caller
+(agl-ucb) pins that file by SHA, so **update the hosts first, then move the pin**: a pin that names a label no host carries leaves the job
+queued. Only `repo-lint.yml` uses the lint slots; `layer-ci.yml` builds and `runner-smoke.yml` stay on the pool slots.
 
 ## Shared cache (trial)
 `deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
@@ -128,7 +142,7 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Where things live
 | What | Where |
 |---|---|
-| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS LINT_MEM_LIMIT LINT_CPU_LIMIT RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
@@ -175,7 +189,7 @@ straight from the checkout, which makes every `git pull` an instant root-code ch
 | Task | Command |
 |---|---|
 | Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL`, `CACHE_DIR`, `SLOTS` and limits are kept; a host from before this change gets 2 slots; give a variable to change it, a token file argument replaces the stored token) |
-| Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled) |
+| Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled); lint slots: `LINT_SLOTS=0 ./kit/update.sh` removes them, `LINT_SLOTS=2` adds one |
 | New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
 | Change limits | `MEM_LIMIT=32g CPU_LIMIT=12 ./kit/update.sh` |
 | Status | `systemctl status 'agl-runner@*'`, `docker ps` |
@@ -226,7 +240,7 @@ A restart kills the job in progress (the first pilot build died this way). Check
 | `deploy.sh`: `kit/runner.digest is empty` / `cosign verify` fails | no published runner image or wrong identity | chapter 04; pin the digest |
 | No runner appears in the org | token, group not allowed for public repos, or label typo | `journalctl -fu agl-runner@1`; Runner groups > allow public repositories |
 | `sidecar agl-dN never answered` | Docker daemon or `docker:dind` image problem | `docker logs agl-dN`; reset 2; the loop backs off up to 10 minutes |
-| Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr`; or all slots are busy (two cold demo builds block every other job, lint included; GitHub cancels a job that waits 24 hours) | set up the missing role; check `LABELS`; wait, or add a slot (`SLOTS=3 ./kit/update.sh`) |
+| Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr`; or all slots are busy (two cold demo builds block every other job, lint included; GitHub cancels a job that waits 24 hours) | set up the missing role; check `LABELS`; wait, or add a slot (`SLOTS=3 ./kit/update.sh`); lint jobs of repo-lint.yml need an `agl-lint` slot (or `agl-fork-lint` for fork pull requests), see "Lint slots" |
 | The org shows no runner right after a long job | the slot is cleaning up and registers the next runner (about 26 minutes after a 10-hour build) | wait; read `journalctl -u agl-runner@N` before calling it an outage |
 | Runner offline entries pile up | crashes | reset 3 |
 | `Permission denied` for your own account on `/srv/agl-cache` | intended: the folder is `root:root 0700` | use `sudo` |
