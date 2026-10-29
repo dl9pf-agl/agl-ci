@@ -122,6 +122,13 @@ git clone https://github.com/dl9pf-agl/agl-ci ../agl-ci
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/validate.sh --machine qemux86-64 --target agl-image-minimal
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/build.sh    --machine qemux86-64 --target agl-image-minimal
 ```
+`validate.sh --verbose` prints the configuration, the output of every check live in a collapsible log group (`::group::`) with its
+command and duration, the complete output of `yocto-check-layer` as the tool writes it (no extra options), a `::error` annotation for a failed check, the last 40 lines of a failed check repeated outside its (collapsed) group, and a summary table at the end; without the flag only
+`running` / `PASSED` / `FAILED` lines appear and the output goes to `build/validate-results/<check>.log`. `layer-ci.yml` passes
+`--verbose` in the `validate` step (one flag on one line, with a comment): delete it to quiet the job log again. Addresses (mirror,
+hash server) are shown as `set` or `unset`, because the job log of a public repository is public. Tested by
+`ci/scripts/validate_test.sh` (run by `scripts/lint.sh`): the output of both modes, exit status, annotation; not tested: a full
+run in a job. A caller picks the change up when it moves its pin of `layer-ci.yml`.
 To test local layer changes use the opt-in dev mode of agl-ucb (`kas/local/dev.yml`, `scripts/aglsetup.sh --dev`): kas then
 never resets the layer clones. To build a specific commit set `AGL_PIN_REPO/URL/SHA` as above.
 `CI=true` adds `ci-only.yml` (passwordless login for HIL tests, buildhistory, CI tuning). Cache: `AGL_SSTATE_DIR`,

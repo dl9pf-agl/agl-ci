@@ -193,7 +193,8 @@ jobs:
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}
-        run: agl-ci/ci/scripts/validate.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
+        # --verbose: output of every check in the job log (collapsible groups), durations, summary. Delete the flag to quiet it.
+        run: agl-ci/ci/scripts/validate.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --verbose
       - name: build
         if: needs.matrix.outputs.mode == 'build'
         env:
