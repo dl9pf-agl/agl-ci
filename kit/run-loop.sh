@@ -5,13 +5,25 @@
 set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
-. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS MEM_LIMIT CPU_LIMIT DIND CACHE_DIR
-#                               POOL MIRROR_URL HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS LINT_MEM_LIMIT LINT_CPU_LIMIT
+. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS DIND CACHE_DIR POOL MIRROR_URL
+#                               HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS and the limits: MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER
+#                               MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR, the same four with the prefix LINT_ for the lint slots
+#                               (MEM_LIMIT / CPU_LIMIT / LINT_MEM_LIMIT / LINT_CPU_LIMIT of an older runner.env are still read)
 # --- slot role: slots 1..SLOTS serve the pool label; the slots after them are lint slots (own label, small, no cache, no hash server)
+# The RUNNER limits bound the runner container (the job's steps, lint). The SIDECAR limits bound the Docker daemon container, and with it
+# every container that kas-container starts there: the image build runs in the sidecar. An empty SIDECAR limit means no limit.
 if [ "$slot" -gt "${SLOTS:-1}" ]; then
-  LABELS="${LINT_LABELS:?LINT_LABELS missing in runner.env}"; MEM_LIMIT="${LINT_MEM_LIMIT:-4g}"; CPU_LIMIT="${LINT_CPU_LIMIT:-2}"
+  LABELS="${LINT_LABELS:?LINT_LABELS missing in runner.env}"
+  MEM_LIMIT_RUNNER="${LINT_MEM_LIMIT_RUNNER:-${LINT_MEM_LIMIT:-4g}}"; CPU_LIMIT_RUNNER="${LINT_CPU_LIMIT_RUNNER:-${LINT_CPU_LIMIT:-2}}"
+  MEM_LIMIT_SIDECAR="${LINT_MEM_LIMIT_SIDECAR:-2g}"; CPU_LIMIT_SIDECAR="${LINT_CPU_LIMIT_SIDECAR:-2}"
   CACHE_DIR=""; MIRROR_URL=""; HASHSERV_RW=""; HASHSERV_UPSTREAM=""
+else
+  MEM_LIMIT_RUNNER="${MEM_LIMIT_RUNNER:-${MEM_LIMIT:-24g}}"; CPU_LIMIT_RUNNER="${CPU_LIMIT_RUNNER:-${CPU_LIMIT:-8}}"
+  MEM_LIMIT_SIDECAR="${MEM_LIMIT_SIDECAR:-}"; CPU_LIMIT_SIDECAR="${CPU_LIMIT_SIDECAR:-}"
 fi
+sc_limits=()   # options of the sidecar's docker run
+[ -z "$MEM_LIMIT_SIDECAR" ] || sc_limits+=(--memory "$MEM_LIMIT_SIDECAR")
+[ -z "$CPU_LIMIT_SIDECAR" ] || sc_limits+=(--cpus "$CPU_LIMIT_SIDECAR")
 # --- end slot role
 E="$ENGINE"; WS=/home/runner/actions-runner/_work   # same path in runner + sidecar (nested bind mounts)
 # Cache of this host: all its slots read and write CACHE_DIR, same path in host, sidecar and runner. A host is either
@@ -40,7 +52,7 @@ prepare() {
   "$E" network create "agl-n$slot" >/dev/null &&
   "$E" volume create "agl-w$slot" >/dev/null &&
   "$E" run --rm -v "agl-w$slot:/w" --user 0 --entrypoint chown "$RUNNER_IMAGE" 1001:1001 /w &&
-  "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${dev[@]}" \
+  "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${dev[@]}" "${sc_limits[@]}" \
       -e DOCKER_TLS_CERTDIR= -v "agl-w$slot:$WS" "${cache[@]}" "$DIND_IMAGE" >/dev/null || return 1
   for _ in $(seq 1 90); do   # sidecar needs up to ~70 s before it listens
     "$E" run --rm --network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" --entrypoint docker "$RUNNER_IMAGE" \
@@ -68,7 +80,7 @@ while :; do
   cfg="$(jq -er .encoded_jit_config <<<"$resp")"; rid="$(jq -er .runner.id <<<"$resp")"
 
   run=("$E" run --rm --name "agl-r$slot" "${dev[@]}" --security-opt seccomp=unconfined
-       --memory "${MEM_LIMIT:-24g}" --cpus "${CPU_LIMIT:-8}" --pids-limit 8192 -e JITCONFIG="$cfg")
+       --memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER" --pids-limit 8192 -e JITCONFIG="$cfg")
   [ "${DIND:-1}" = 1 ] && run+=(--network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" -e KAS_CONTAINER_ENGINE=docker -v "agl-w$slot:$WS")
   [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" "${cache_env[@]}")
   run+=("${hs_env[@]}")

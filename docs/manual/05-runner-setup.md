@@ -29,8 +29,8 @@ Done once per organisation. The commands on the host itself are in the Runbook b
 3. Pin the digest: `echo sha256:... > kit/runner.digest` (PR; the digest is printed by the `publish` job and
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
-   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT`,
-   `CPU_LIMIT`, `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL` (see "Pools").
+   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT_RUNNER`,
+   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -74,7 +74,7 @@ Lint and preparation jobs (`repo-lint.yml`, used by agl-ucb) must not wait behin
 every host runs `LINT_SLOTS` extra slots (default **1**, 0 turns them off), numbered after the pool slots: with `SLOTS=2` and `LINT_SLOTS=1`
 the units are `agl-runner@1` and `@2` (label `agl-pr`) and `@3` (label `agl-lint`). An untrusted host's lint slot has the label `agl-fork-lint`.
 
-A lint slot is the same single-use runner with its own limits and less access: `LINT_MEM_LIMIT` (default 4g), `LINT_CPU_LIMIT` (default 2),
+A lint slot is the same single-use runner with its own limits and less access: `LINT_MEM_LIMIT_RUNNER` (default 4g), `LINT_CPU_LIMIT_RUNNER` (default 2) and the two `LINT_*_SIDECAR` limits (2g, 2; see "Limits of a slot"),
 **no cache directory, no mirror URL, no hash server** (`run-loop.sh`, block "slot role"; tested by `kit/run-loop_test.sh`). It carries no pool
 label, so a build cannot land on it, and a lint job cannot land on a pool slot. The pool boundary is unchanged: `AGL_POOL` is passed as before,
 so the job-started hook still refuses fork pull requests on a trusted host's lint slot. `LINT_LABELS` overrides the label (not remembered by an update).
@@ -82,6 +82,33 @@ so the job-started hook still refuses fork pull requests on a trusted host's lin
 `repo-lint.yml` picks `agl-lint` for same-repo pull requests, push and dispatch and `agl-fork-lint` for pull requests from forks. A caller
 (agl-ucb) pins that file by SHA, so **update the hosts first, then move the pin**: a pin that names a label no host carries leaves the job
 queued. Only `repo-lint.yml` uses the lint slots; `layer-ci.yml` builds and `runner-smoke.yml` stay on the pool slots.
+
+## Limits of a slot
+Every slot runs two containers, and each has its own limits:
+
+| Variable | Default | Bounds |
+|---|---|---|
+| `MEM_LIMIT_RUNNER`, `CPU_LIMIT_RUNNER` | 24g, 8 | the **runner container** (`agl-rN`): the GitHub runner and the steps of the job, including the `kas-container` script |
+| `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` | **none** | the **Docker sidecar** (`agl-dN`): its daemon and every container that `kas-container` starts in it, which is where bitbake runs |
+| `LINT_MEM_LIMIT_RUNNER`, `LINT_CPU_LIMIT_RUNNER` | 4g, 2 | the runner container of a lint slot |
+| `LINT_MEM_LIMIT_SIDECAR`, `LINT_CPU_LIMIT_SIDECAR` | 2g, 2 | the sidecar of a lint slot |
+
+`kas-container` is a script: it runs in the runner container and calls `docker run` against the sidecar (`DOCKER_HOST` points there), so
+the build container it starts is created by the sidecar's daemon and lives below the sidecar, not below the runner. **A limit on the
+runner container alone therefore does not bound an image build**; the sidecar limit does. Until this was split, the sidecar had no limit
+at all and a build could use the whole machine (by reading `run-loop.sh`; check on a host with `docker inspect agl-r1 agl-d1 --format
+'{{.Name}} mem={{.HostConfig.Memory}} cpus={{.HostConfig.NanoCpus}}'` while a job runs, `0` means no limit). The default for the build
+slots' sidecar is still none, so a plain update changes nothing there; set it per host, for example for two build slots on a 62 GB, 8 CPU
+machine `MEM_LIMIT_SIDECAR=26g CPU_LIMIT_SIDECAR=7 ./kit/update.sh` leaves room for the other slot, the lint slot and the system. A
+memory limit that is too low makes the kernel kill bitbake mid-build: the heaviest tasks (Qt, Flutter, WebRTC) need the most.
+
+The old names `MEM_LIMIT`, `CPU_LIMIT`, `LINT_MEM_LIMIT` and `LINT_CPU_LIMIT` are read as the RUNNER values, given on the command line or
+stored in an old `runner.env`, so a host keeps its sizes through the first update; the new `runner.env` no longer contains them.
+Precedence: given now (new name, then old name), then stored (new name, then old name), then the default. A value takes effect when
+the slot service restarts (`update.sh` restarts all of them; `systemctl restart agl-runner@N` kills the job on that slot). `--pids-limit
+8192` and `seccomp=unconfined` of the runner container are written in `run-loop.sh` and have no variable.
+Tested by `kit/run-loop_test.sh` (which slot gets which limits; the options reach both `docker run` calls) and `kit/deploy_test.sh`
+(what a plain update keeps, the old names); not tested on a host yet.
 
 ## Shared cache (trial)
 `deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
@@ -142,7 +169,7 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Where things live
 | What | Where |
 |---|---|
-| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS LINT_MEM_LIMIT LINT_CPU_LIMIT RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
@@ -191,7 +218,7 @@ straight from the checkout, which makes every `git pull` an instant root-code ch
 | Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL`, `CACHE_DIR`, `SLOTS` and limits are kept; a host from before this change gets 2 slots; give a variable to change it, a token file argument replaces the stored token) |
 | Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled); lint slots: `LINT_SLOTS=0 ./kit/update.sh` removes them, `LINT_SLOTS=2` adds one |
 | New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
-| Change limits | `MEM_LIMIT=32g CPU_LIMIT=12 ./kit/update.sh` |
+| Change limits | `MEM_LIMIT_SIDECAR=26g CPU_LIMIT_SIDECAR=7 ./kit/update.sh` (see "Limits of a slot"; restarts the slots) |
 | Status | `systemctl status 'agl-runner@*'`, `docker ps` |
 | Pause the host | `sudo systemctl stop 'agl-runner@*'` (jobs in progress are killed: wait until the runners are idle) |
 | Resume | `sudo systemctl start agl-runner@1 agl-runner@2` |

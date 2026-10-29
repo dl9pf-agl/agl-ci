@@ -5,11 +5,15 @@
 #   sudo ./deploy.sh                             # prompts (hidden)
 # Optional env: GH_ORG (default dl9pf-agl) SLOTS (default 1) ENGINE (docker|podman, default auto)
 #               LINT_SLOTS (default 1; 0 = none): extra small slots that take lint and preparation jobs only, label agl-lint
-#               (trusted) or agl-fork-lint (untrusted; LINT_LABELS), LINT_MEM_LIMIT (4g) LINT_CPU_LIMIT (2); no cache, no hash server
+#               (trusted) or agl-fork-lint (untrusted; LINT_LABELS); no cache, no hash server
+#               Limits, per slot: MEM_LIMIT_RUNNER (24g) CPU_LIMIT_RUNNER (8) bound the runner container (the job's steps);
+#               MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR (default: none) bound the Docker sidecar, i.e. the image build that runs in it.
+#               Lint slots: LINT_MEM_LIMIT_RUNNER (4g) LINT_CPU_LIMIT_RUNNER (2) LINT_MEM_LIMIT_SIDECAR (2g) LINT_CPU_LIMIT_SIDECAR (2).
+#               The older MEM_LIMIT, CPU_LIMIT, LINT_MEM_LIMIT, LINT_CPU_LIMIT are read as the RUNNER values.
 #               POOL (trusted | untrusted, default trusted): a host serves one pool only. trusted = same-repo PRs, nightly,
 #               push, release (label agl-pr); untrusted = fork PRs (label agl-fork). SLOTS = number of slots on this host.
 #               MIRROR_URL (untrusted hosts): where the trusted mirror is read, e.g. https://mirror.example/
-#               LABELS (default by POOL) MEM_LIMIT CPU_LIMIT CACHE_DIR (default /srv/agl-cache)
+#               LABELS (default by POOL) CACHE_DIR (default /srv/agl-cache)
 #               HASHSERV_RW (trusted hosts) = host:port of the shared read-write hash server; HASHSERV_UPSTREAM (untrusted hosts) =
 #               host:port of the shared READ-ONLY one (agl-ci chapter 14). Both optional; an untrusted host never gets HASHSERV_RW.
 #               POOL, MIRROR_URL and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
@@ -17,10 +21,24 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 old() { sed -n "s/^$1=//p" /etc/agl-runner/runner.env 2>/dev/null || true; }
+# --- begin settings restore (kit/deploy_test.sh runs this block with a fake old())
 # Settings stay as deployed before unless given, so that a plain update does not reset a host with its own paths or sizes.
-for v in GH_ORG ENGINE MEM_LIMIT CPU_LIMIT DIND CACHE_DIR SLOTS LINT_SLOTS LINT_MEM_LIMIT LINT_CPU_LIMIT; do
+# The limits had one name each before the sidecar got its own; the old name becomes the RUNNER value. Precedence: given now (new name,
+# then old name), then stored (new name, then old name).
+_legacy="MEM_LIMIT:MEM_LIMIT_RUNNER CPU_LIMIT:CPU_LIMIT_RUNNER LINT_MEM_LIMIT:LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT:LINT_CPU_LIMIT_RUNNER"
+for p in $_legacy; do
+  o="${p%%:*}"; n="${p##*:}"
+  [ -n "${!n:-}" ] || [ -z "${!o:-}" ] || printf -v "$n" '%s' "${!o}"
+done
+for v in GH_ORG ENGINE DIND CACHE_DIR SLOTS LINT_SLOTS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR \
+         LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR; do
   [ -n "${!v:-}" ] || { val="$(old "$v")"; [ -z "$val" ] || printf -v "$v" '%s' "$val"; }
 done
+for p in $_legacy; do
+  o="${p%%:*}"; n="${p##*:}"
+  [ -n "${!n:-}" ] || { val="$(old "$o")"; [ -z "$val" ] || printf -v "$n" '%s' "$val"; }
+done
+# --- end settings restore
 ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"; LINT_SLOTS="${LINT_SLOTS:-1}"
 for v in SLOTS LINT_SLOTS; do [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "$v must be a number, got: ${!v}" >&2; exit 1; }; done
 
@@ -80,11 +98,15 @@ POOL=$POOL
 MIRROR_URL=$MIRROR_URL
 HASHSERV_RW=$HASHSERV_RW
 HASHSERV_UPSTREAM=$HASHSERV_UPSTREAM
-MEM_LIMIT=${MEM_LIMIT:-24g}
-CPU_LIMIT=${CPU_LIMIT:-8}
+MEM_LIMIT_RUNNER=${MEM_LIMIT_RUNNER:-24g}
+CPU_LIMIT_RUNNER=${CPU_LIMIT_RUNNER:-8}
+MEM_LIMIT_SIDECAR=${MEM_LIMIT_SIDECAR:-}
+CPU_LIMIT_SIDECAR=${CPU_LIMIT_SIDECAR:-}
 LINT_LABELS=${LINT_LABELS:-$default_lint_labels}
-LINT_MEM_LIMIT=${LINT_MEM_LIMIT:-4g}
-LINT_CPU_LIMIT=${LINT_CPU_LIMIT:-2}
+LINT_MEM_LIMIT_RUNNER=${LINT_MEM_LIMIT_RUNNER:-4g}
+LINT_CPU_LIMIT_RUNNER=${LINT_CPU_LIMIT_RUNNER:-2}
+LINT_MEM_LIMIT_SIDECAR=${LINT_MEM_LIMIT_SIDECAR:-2g}
+LINT_CPU_LIMIT_SIDECAR=${LINT_CPU_LIMIT_SIDECAR:-2}
 DIND=${DIND:-1}
 CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
 SLOTS=$SLOTS

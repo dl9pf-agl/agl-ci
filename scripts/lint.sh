@@ -11,6 +11,7 @@ if [ -n "${GH_TOKEN:-}" ]; then run zizmor --format=github .; else run zizmor --
 run shellcheck -x scripts/*.sh kit/*.sh ci/scripts/*.sh docker/builder/entrypoint.sh docker/runner/*.sh
 run ci/scripts/validate_test.sh   # quiet and --verbose output of validate.sh
 run kit/run-loop_test.sh   # which slot gets which label and limits (the lint slots)
+run kit/deploy_test.sh   # what a plain update keeps and how the old limit names become the RUNNER limits
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi
