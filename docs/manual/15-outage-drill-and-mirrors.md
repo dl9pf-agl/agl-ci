@@ -2,6 +2,8 @@
 
 Status: the fetch drill (A) ran on real bitbake; the web server, pull sync, git mirrors, TLS options, pruning, hash server wiring and the uninative check are written and tested as described below. Not done: the full offline drill B, drill C, and a mirror fed from a second machine. The open-items table at the end is the single list of what is still missing.
 
+Contents: Requirement; What a CI build depends on; The drill (offline, from the mirror alone); First drill results and uninative; Mirrors in the build path (fetch mode, mirror design, web server, transport, consumer settings M4, git mirrors M6, sync to a download server M3, trying it on one host); Folder growth and pruning; Open items.
+
 ## Requirement
 Builds must survive an upstream outage at three levels:
 - **T1** keep building on the existing builder (incremental builds, warm cache);
@@ -13,7 +15,7 @@ Marked V = verified in documentation or source; the rest is proven by the drill.
 
 | # | Dependency | Answer |
 |---|---|---|
-| L1 | kas layer clones: 18 distinct repo URLs on git.yoctoproject.org, github.com, git.openembedded.org (V) | Own git mirrors and `KAS_PREMIRRORS` (V: "alternatives for repo URLs", regular expression plus replacement, forwarded by kas-container). `KAS_REPO_REF_DIR` (V: directories named `host.org.repo.git`, missing repos are cloned below it) is the alternative; whether kas still contacts the remote for a pinned commit that is already present is **not stated**, test it (drill C). |
+| L1 | kas layer clones: 18 distinct repo URLs in agl-ucb (23 with the layers' own feature fragments) on git.yoctoproject.org, github.com, git.openembedded.org (V) | Own git mirrors and `KAS_PREMIRRORS` (V: "alternatives for repo URLs", regular expression plus replacement, forwarded by kas-container). `KAS_REPO_REF_DIR` (V: directories named `host.org.repo.git`, missing repos are cloned below it) is the alternative; whether kas still contacts the remote for a pinned commit that is already present is **not stated**, test it (drill C). |
 | L2 | Recipe sources: `SRC_URI` hosts in meta-agl alone are github.com (39), gerrit.automotivelinux.org (9), strlcat.eu (11), gitlab.freedesktop.org (2) and more (V), plus every upstream of oe-core and meta-openembedded | `PREMIRRORS` pointing at our mirror, tried before upstream (V order: DL_DIR, PREMIRRORS, upstream, MIRRORS). `agl.conf` only has `MIRRORS` to download.automotivelinux.org, which is tried last and is AGL's server, not ours. Nightly and release jobs set `BB_GENERATE_MIRROR_TARBALLS = "1"` (V: git tarballs into DL_DIR) and run `fetchall` for every matrix target. |
 | L3 | sstate | `SSTATE_MIRRORS` to our HTTP mirror, filled by nightly and release jobs. |
 | L4 | Proof that L1-L3 are complete | The drill below. |
@@ -40,7 +42,8 @@ job then runs `drill.sh` instead of `validate.sh` and `build.sh`. For a `pull_re
 request must not replace validate and build by a drill and still get a green `result`). By hand on the runner host,
 inside a tree: `AGL_TREE=... KAS_EXEC=kas CI=true ci/scripts/drill.sh ...`.
 
-**Drill from the mirror alone (tier T2).** `drill.sh --mode mirror` (sources only, minutes) and `--mode mirror-build` (the
+### Drill from the mirror alone (tier T2)
+ `drill.sh --mode mirror` (sources only, minutes) and `--mode mirror-build` (the
 whole build, sstate from the mirror too) prove that a clean rebuild on a new builder works with upstream gone. They run with
 an EMPTY private download and sstate directory (`build/drill-cache` in the workspace, so nothing of the shared cache can help),
 `AGL_MIRROR_URL` required, and `BB_ALLOWED_NETWORKS` set to the host of the mirror (V, `fetch2`: any other host is an untrusted URL
@@ -122,13 +125,18 @@ read the mirror over HTTPS through the same `PREMIRRORS` / `SSTATE_MIRRORS` sett
 a clean rebuild (T2) use the same URL. One mechanism for every consumer. Downloads are protected by the `SRC_URI`
 checksums; sstate objects have no integrity check, which is why only the trusted pool may write what is served.
 
-Web server (step 4): an nginx container, `kit/mirror/run.sh` with `kit/mirror/nginx.conf`, image pinned by digest. It
+### Web server (M1)
+An nginx container, `kit/mirror/run.sh` with `kit/mirror/nginx.conf`, image pinned by digest. It
 mounts `$CACHE_DIR/dl` and `$CACHE_DIR/sstate` read-only (enforced by the kernel) and serves them as `/dl/` and
 `/sstate/` and, when `$CACHE_DIR/git` exists, `/git/` (bare layer mirrors), nothing else; it runs unprivileged with a read-only root, no capabilities and `no-new-privileges`. Served:
 tarballs, `git2_*.tar.gz`, `uninative/<sha256>/...`, sstate objects and their `.siginfo`, range requests (`wget
 --continue`) and `HEAD`. Not served (404): `*.lock`, `*.tmp`, `*.done`, `hashserv.db*`, the `git2/` clone directories
 and dotfiles; directory listings are off (403) and every method except `GET` and `HEAD` returns 405. Tested with a fake
-cache tree on 2026-10-26. Start: `kit/mirror/run.sh` (env `CACHE_DIR`, `PORT`, default 8080). Transport has three modes:
+cache tree on 2026-10-26. Start: `kit/mirror/run.sh` (env `CACHE_DIR`, `PORT`, default 8080).
+
+### Transport: plain HTTP, HTTPS terminator, own TLS
+Three modes:
+
 (1) **Plain HTTP, the default** and what the development and test setup uses: no TLS variable, nothing changes. Fine for the
 checksummed downloads, the weak point for sstate (no integrity check) and for the unpinned `branch:` layers, so only on a
 network you control.
@@ -155,7 +163,8 @@ Any other web server works if it follows the same rules (Apache:
 (`sstate/corei7-64/...`); the consumer URL in M4 must contain `${DEFAULTTUNE}`. Hash equivalence: read-write port only
 for the trusted pool, read-only port public (chapter 14).
 
-**Consumer settings (M4).** `kas/local/mirrors.yml` in agl-ucb is included by the engine when `AGL_MIRROR_URL` is set (an
+### Consumer settings (M4)
+ `kas/local/mirrors.yml` in agl-ucb is included by the engine when `AGL_MIRROR_URL` is set (an
 http(s) URL without a trailing slash; the engine strips one and refuses other schemes). It puts `$AGL_MIRROR_URL/dl/` in
 front of the upstream URL of every recipe (`PREMIRRORS` for git, gitsm, ftp, http, https; the uninative tarball is found
 through the http line) and `$AGL_MIRROR_URL/sstate/${DEFAULTTUNE}/PATH` in front of the sstate lookup (`SSTATE_MIRRORS`),
@@ -167,8 +176,9 @@ misses through a URL. AGL's own `MIRRORS` in `agl.conf` stay as the last line. A
 `download.automotivelinux.org/AGL/mirror/` (and `sstate-mirror/master/<tune>/`) answers today; it is not used as a primary
 and whether its sstate objects match our hashes is not checked.
 
-**Git mirrors for the layers (M6).** kas clones the layers (oe-core, meta-openembedded, the AGL layers, 23 repositories in
-agl-ucb and the layer feature fragments) from github.com, git.yoctoproject.org and git.openembedded.org, so a clean checkout needs
+### Git mirrors for the layers (M6)
+ kas clones the layers (oe-core, meta-openembedded, the AGL layers: 18 repositories in
+agl-ucb, 23 with the layer feature fragments) from github.com, git.yoctoproject.org and git.openembedded.org, so a clean checkout needs
 them. `kit/mirror/git-repos-from-kas.py <dirs>` lists the URLs from the kas files; `kit/mirror/git-mirrors.sh` keeps bare mirrors of
 them in `CACHE_DIR/git/<host>/<path>` (first run clones, later runs update, then `git update-server-info`); nginx serves them as
 `/git/` over plain dumb HTTP (`run.sh` mounts the folder when it exists). Run it as root on the trusted host, from cron or after the
@@ -184,6 +194,7 @@ puts a line first that maps `AGL_PIN_URL` (for a fork pull request the fork) to 
 other layers use the mirror (tested with real kas: without that line the checkout fails with "repository ... not found"). Not
 done: the first clone in `checkout.sh` of the workflow uses the original URLs (the mirror drill covers the sources, not yet this clone).
 
+### Order of reports and sync rules
 **Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
 `sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.
 A consumer that gets a unihash without its object misses and rebuilds that task; without hashserv it would miss as well,
@@ -199,7 +210,8 @@ daemon in a container (`kit/mirror/rsyncd.sh`), filters as above, every few minu
 build host holds a credential for the web host, and several hosts merge into one tree without conflicts. It writes a
 timestamp file after each pull, so a stalled sync is visible. `AGL_MIRROR_URL` does not change.
 
-**How the download server gets the cache (M3).** No account, key or password on either side, and the download server never gets
+### How the download server gets the cache (M3)
+ No account, key or password on either side, and the download server never gets
 a login on a build host. Each trusted build host runs a read-only rsync daemon in a container (`kit/mirror/rsyncd.sh`); the
 download server pulls with `kit/mirror/pull-sync.sh`.
 - Build host: `RSYNCD_BIND=<private address> RSYNCD_ALLOW=<address of the download server> kit/mirror/rsyncd.sh`. Both are required.
@@ -222,7 +234,8 @@ skips an area that is not offered and writes `LAST_SYNC`; bad addresses and URLs
 of the allowed address did not take effect in rsync 3.5, so `rsyncd.sh` assembles the config in the container instead. Not
 tested: two hosts and a real private network or VPN, the volume of a real sstate tree, and the container with published ports
 (the test used host networking).
-**Trying it on one host.** `kit/mirror/sync-selftest.sh` runs the whole chain on the trusted host before the download server is a
+### Trying it on one host
+ `kit/mirror/sync-selftest.sh` runs the whole chain on the trusted host before the download server is a
 separate machine: daemon (container `agl-rsyncd-test`, published on 127.0.0.1) -> pull as the normal user with the client of the
 builder image into a scratch tree (`~/agl-sync-selftest`) -> an nginx container on that tree (`agl-mirror-test`, port 18080) ->
 checks (LAST_SYNC, nothing excluded in the tree, a second pull changes nothing, a write is refused, a file through nginx is
@@ -267,7 +280,7 @@ files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so 
 | M3 | Mirror publisher step in nightly and release (rsync sstate and dl, single writer) | read-only rsync daemon container (`kit/mirror/rsyncd.sh`) and pull script (`kit/mirror/pull-sync.sh`) written and tested locally; only needed once the download server is another machine (user: private network, start the daemon, cron) |
 | M4 | `kas/local/mirrors.yml` in agl-ucb: `SSTATE_MIRRORS`, `PREMIRRORS` from `AGL_MIRROR_URL`, AGL's `MIRRORS` stays as last line | fragment and engine wiring done (agl-ucb first, then agl-ci); proof by the drill from the mirror alone (step 7) pending |
 | M5 | `BB_GENERATE_MIRROR_TARBALLS=1` and a fetch of all matrix targets in nightly and release | `fetch.sh`, `mode: fetch` and the scheduled `fetch` job in `meta-agl` done (2026-10-26); the same job for the other layer repos with M18; the fill job reads no mirror (`fetch.sh` unsets `AGL_MIRROR_URL`); git tarballs for sources that were already cloned to be checked (compare `git2_*.tar.gz` with `git2/`) |
-| M6 | Git mirrors for the 18 kas repos and `KAS_PREMIRRORS` | scripts and engine switch (`AGL_GIT_MIRROR=1`) done and tested with real kas and a local dumb-HTTP mirror; to run on the host: user (cron); not yet used by `checkout.sh`; TODO later: after the routine nightly fetch, a scheduled check with `AGL_GIT_MIRROR=1` (layers cloned and sources fetched through the mirror only) so that the upstream-outage case is exercised regularly |
+| M6 | Git mirrors for the kas repos (18 in agl-ucb, 23 with the layers' own fragments) and `KAS_PREMIRRORS` | scripts and engine switch (`AGL_GIT_MIRROR=1`) done and tested with real kas and a local dumb-HTTP mirror; to run on the host: user (cron); not yet used by `checkout.sh`; TODO later: after the routine nightly fetch, a scheduled check with `AGL_GIT_MIRROR=1` (layers cloned and sources fetched through the mirror only) so that the upstream-outage case is exercised regularly |
 | M7 | Outage drill | fetch drill A done on real bitbake (2026-10-26): 0 misses for all four meta-agl images after a fetch. Drill B (full offline build) and drill C (offline layers) open |
 | M8 | No per-job builder pull (`KAS_EXEC=kas` in the runner image or pull-through registry) | open |
 | M9 | Registry experiment zot and registry:3, `mirror-image.sh`, optional mirror job, OCI archive per release | open |

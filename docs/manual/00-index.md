@@ -21,5 +21,13 @@ runner kit updates the matching chapter in the same commit.
 | 14 | [Hash equivalence and PR servers](14-hashserv-and-prserv.md) | Which server where, read-only vs read-write, when a PR service is needed |
 | 15 | [Outage drill, mirrors, open items](15-outage-drill-and-mirrors.md) | Upstream-outage tiers, offline drill, mirror decisions, folder growth, tracked missing items |
 
-Status legend used in the chapters: **done** (implemented and tested), **untested** (implemented, not yet run),
-**planned**.
+Which chapter do I need?
+- Host administrator (set up, update or repair a build host): 05, then 15 for mirrors and caches.
+- Layer maintainer (matrix, callers, a red or empty CI run): 13.
+- Release engineer (signing, keys, hand-over): 06, 04.
+- Security reviewer (trust rules, CVE policy, hardening): 01, 12, 13 ("Trust rule for the tier"), 09.
+- Adopter on another forge or org: 11.
+
+Status legend used in the chapters: **in use** (runs in CI or on the hosts), **implemented** (written and tested locally, not
+yet in regular use), **decided** (agreed, not built), **planned** and **deferred** (not started), and **untested** as a
+qualifier for a part that has not been run.

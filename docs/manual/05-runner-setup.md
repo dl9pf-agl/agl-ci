@@ -1,8 +1,8 @@
 # 05 Runner setup (Debian 13 host)
 
 Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls and verifies the signed runner image;
-`kit/runner.digest` pinned to a verified publish). The untrusted host and the mirror web server (`kit/mirror/`) are new
-(2026-10-26) and not yet running on a server. The runbook below covers setup, daily use, reset and troubleshooting.
+`kit/runner.digest` pinned to a verified publish). An untrusted host (label `agl-fork`) is online and the mirror web server
+(`kit/mirror/`) runs on the trusted host. The runbook below covers setup, daily use, reset and troubleshooting.
 
 ## What the kit does
 `kit/deploy.sh` (systemd + Docker/Podman, run from a checkout of this repo):
@@ -34,8 +34,8 @@ runner image and `/dev/kvm` goes straight to the container.
 Bump pins (chapter 03), merge, wait for publish+verify, put the new digest into `kit/runner.digest`, re-run
 `deploy.sh` on the host (it restarts nothing by itself: `systemctl restart agl-runner@N` between jobs).
 
-One command: `kit/update.sh [token-file]` does `git pull --ff-only`, `deploy.sh` with `SLOTS=2` and restarts both
-slots. Why `deploy.sh` copies `run-loop.sh` and the unit to `/opt` and `/etc/systemd`: systemd runs it as root, so
+One command: `kit/update.sh [token-file]` does `git pull --ff-only`, `deploy.sh` with the stored `SLOTS` (2 when none is stored) and restarts
+all slots. Why `deploy.sh` copies `run-loop.sh` and the unit to `/opt` and `/etc/systemd`: systemd runs it as root, so
 it must not come from a checkout that a `git pull`, a branch switch or a non-root user can change. The copy is a
 root-owned snapshot of a reviewed commit; the cost is one `install` line. Alternative (rejected): `ExecStart`
 straight from the checkout, which makes every `git pull` an instant root-code change.
@@ -50,9 +50,10 @@ in the sidecar's daemon and resolves host paths there.
 
 Default (a trusted host, the trial decision of 2026-10-23): every slot, PR or release, reads AND writes the same cache, so all jobs profit. Known
 risk: an approved fork PR can write poisoned sstate that later jobs reuse; concurrent builds share the hash
-equivalence database in `sstate/` (sqlite). Before production: fork pull requests move to an untrusted host (see "Pools")
-and the cache is rebuilt from scratch once.
-Hash equivalence and PR servers: chapter 14. Delete the cache with `rm -rf $CACHE_DIR/*` (next build is cold). Size: expect 50-150 GB, check `df -h`.
+equivalence database in `sstate/` (sqlite). The routing of fork pull requests to the untrusted pool exists now (see "Pools"; the caller of
+`meta-agl`, and those in the open pull requests of demo and devel, pin a `layer-ci.yml` that routes), so the trial exception ends for new runs; whether to rebuild the trusted cache
+from scratch once is still to be decided.
+Hash equivalence and PR servers: chapter 14. To empty the cache see "Reset and re-setup", step 4 (next build is cold). Size: expect 50-150 GB, check `df -h`.
 
 ## Pools (trusted and untrusted hosts)
 **A host serves one pool only; trusted and untrusted never share a physical server** (the privileged DinD sidecar and
@@ -83,8 +84,8 @@ caller. The runner image carries actionlint, zizmor, shellcheck and PyYAML (pinn
 smoke test), so a lint job downloads nothing. A job waits in the queue until a host of its pool is online and runs the new
 tools only once the hosts run an image built from this change (`kit/update.sh`). A caller may pass `runner: github` to use a
 GitHub-hosted runner instead (it then installs the tools per run). Tested: the image builds locally and the tools and the lint
-script of agl-ucb run in it; actionlint/zizmor/hadolint of the files. Not tested: the images workflow, the `runs-on` expression
-on GitHub, a run on a pool host.
+script of agl-ucb run in it. Tested on GitHub: the images workflow builds the image, and the `lint` job of agl-ucb pull requests
+runs on the trusted pool (`agl-pr`). Not tested: a fork pull request of agl-ucb on the untrusted pool.
 
 ## Host requirements and what the kit does not assume
 - **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
@@ -161,7 +162,7 @@ Untrusted host:
 - Org Settings > Actions > Runners: one idle runner per slot, labels `self-hosted Linux X64` plus the pool label.
 - Trusted host: `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/dl/` prints `403` (listing off), a real file
   under `$CACHE_DIR/dl` prints `200` (list the folder with `sudo`: it is root-only on the host).
-- A real job: a pull request or `workflow_dispatch` of the caller; first build on an empty cache is cold (hours), the next one warm (about 25 minutes).
+- A real job: a pull request or `workflow_dispatch` of the caller; first build on an empty cache is cold (`agl-image-minimal` about 4.5 hours; the Qt and Flutter demo images take 20 hours or more), the next one warm (about 25 to 30 minutes).
 
 ### Daily use
 | Task | Command |
@@ -218,7 +219,8 @@ A restart kills the job in progress (the first pilot build died this way). Check
 | `deploy.sh`: `kit/runner.digest is empty` / `cosign verify` fails | no published runner image or wrong identity | chapter 04; pin the digest |
 | No runner appears in the org | token, group not allowed for public repos, or label typo | `journalctl -fu agl-runner@1`; Runner groups > allow public repositories |
 | `sidecar agl-dN never answered` | Docker daemon or `docker:dind` image problem | `docker logs agl-dN`; reset 2; the loop backs off up to 10 minutes |
-| Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr` | set up the missing role; check `LABELS` |
+| Jobs stay queued | no runner with the job's label: fork pull requests need an `agl-fork` host, everything else `agl-pr`; or all slots are busy (two cold demo builds block every other job, lint included; GitHub cancels a job that waits 24 hours) | set up the missing role; check `LABELS`; wait, or add a slot (`SLOTS=3 ./kit/update.sh`) |
+| The org shows no runner right after a long job | the slot is cleaning up and registers the next runner (about 26 minutes after a 10-hour build) | wait; read `journalctl -u agl-runner@N` before calling it an outage |
 | Runner offline entries pile up | crashes | reset 3 |
 | `Permission denied` for your own account on `/srv/agl-cache` | intended: the folder is `root:root 0700` | use `sudo` |
 | `df` full | cache or Docker data | cache size 50-150 GB; `docker system df`; reset 2 and 4 |
@@ -232,9 +234,8 @@ A restart kills the job in progress (the first pilot build died this way). Check
 - Never run `pull_request_target` workflows on this runner.
 
 ## Open points
-`/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested; the old
-test runner (`Debian-1303-trixie-amd64-base`, bare host install, labels `self-hosted Linux X64 agl` (removed)) must be
-removed from the org when the kit replaces it.
+`/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested. (The old bare-host test runner
+was removed from the org.)
 
 ## Labels
 `agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.

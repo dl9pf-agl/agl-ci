@@ -14,7 +14,9 @@ imported yet (they still call `make`); the matrix and scripts are forge-independ
 - **Repo under test** = env `AGL_PIN_REPO`, `AGL_PIN_URL` (fork URL for fork PRs), `AGL_PIN_SHA`. The engine writes
   `<tree>/build/ci-kas/layer-pin.yml` (`url`, `commit`, `branch:` cleared) and appends it last to the kas chain, so kas
   builds exactly that commit and nothing is reset to a branch tip. The `matrix` job first runs `ci/scripts/checkout.sh`
-  (`kas checkout` of `base.yml` + `pins.yml` + the pin; `pins.yml` in agl-ucb pins the externals only; `meta-agl`, `meta-agl-demo` and `meta-agl-devel` float on the tip of their branch, and the repo under test is pinned by a generated fragment) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
+  (`kas checkout` of `base.yml` + `pins.yml` + the pin) so the `ci/build-matrix.yaml` files exist before the matrix is computed.
+  `pins.yml` in agl-ucb pins the external layers only. `meta-agl`, `meta-agl-demo` and `meta-agl-devel` float on the tip of their
+  branch, and the repo under test is pinned by the generated fragment.
 - **Engine** = `agl-ci/ci/scripts` (+ `ci/kas/*.yml`, staged into `<tree>/build/ci-kas/` at run time because kas needs
   them inside the work dir).
 - `AGL_TREE` selects the tree (default: current directory).
@@ -84,7 +86,7 @@ workflow, never from a caller input, so a pull request cannot pick the pool thro
 fork's workflow file is the fork's own; it does not have to call our workflow and could name the label `agl-pr` in its own
 `runs-on`. Today only the approval policy `all_external_contributors` (a maintainer must approve the run, and must read the
 workflow change) stands in the way; restricting the trusted runners to the reusable workflows of agl-ci is open item M21.
-Fork pull requests wait until an `agl-fork` runner (an untrusted host) exists.
+An `agl-fork` runner (untrusted host) is online; a fork pull request has not been run on it yet.
 
 **The matrix file of a pull request is untrusted input** (a fork can change `ci/build-matrix.yaml`). It cannot choose the pool,
 the tier or the mode, but its values reach kas file paths, shell strings of the build job and artifact paths. `_matrix.py`
@@ -99,14 +101,14 @@ trust level, which the pull request's own recipes can do anyway.
 ## Reusable workflow
 `.github/workflows/layer-ci.yml` is called by the layer repos, pinned by full SHA. Inputs: `repo` (repo under test, scopes
 the downstream chain), `tier` (default: derived from the event), `kas_exec` (`kas-container` | `kas`), `ucb_ref` (agl-ucb
-ref to build with, default branch when empty; use it to test an agl-ucb branch before merging). The builder image is
+ref to build with, default branch when empty; use it to test an agl-ucb branch before merging), `mode` (`build` by default, `fetch`, `drill`, `drill-mirror`; chapter 15). The builder image is
 pinned in `ci/builder.digest` and verified (`scripts/verify-release.sh`) in the `matrix` job. Bump the digest after every
 published builder (digest in the `publish` job log of the `images` run on `main`).
 
 ## Running on a desk
 ```
 git clone https://github.com/dl9pf-agl/agl-ucb && cd agl-ucb
-scripts/# the first engine run clones the layers via kas; for local edits see agl-ucb README (--dev)
+# the first engine run clones the layers via kas; for local edits see the agl-ucb README (--dev)
 git clone https://github.com/dl9pf-agl/agl-ci ../agl-ci
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/validate.sh --machine qemux86-64 --target agl-image-minimal
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/build.sh    --machine qemux86-64 --target agl-image-minimal
@@ -115,7 +117,7 @@ To test local layer changes use the opt-in dev mode of agl-ucb (`kas/local/dev.y
 never resets the layer clones. To build a specific commit set `AGL_PIN_REPO/URL/SHA` as above.
 `CI=true` adds `ci-only.yml` (passwordless login for HIL tests, buildhistory, CI tuning). Cache: `AGL_SSTATE_DIR`,
 `AGL_DL_DIR` (existing fragments in `agl-ucb/kas/local`); the kit sets both on the runner (chapter 05, "Shared cache"). `kas_runtime_args` mounts the directories at the
-same path into the kas container and forwards the variable; `kas_extra_includes` adds the two fragments.
+same path into the kas container and forwards the variable; `kas_extra_includes` adds the fragment of every variable that is set: the two cache directories, `AGL_MIRROR_URL` (`mirrors.yml`) and the hash server variables (chapter 14).
 
 ## Changes against the original
 Tree root and matrices are parameters instead of the repo root; one `kas_run` instead of three `kas-container` call

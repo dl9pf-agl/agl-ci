@@ -50,4 +50,4 @@ canary (same commit, same digest expected).
 failed with `exec /entrypoint.sh failed: Permission denied` on the runner. Reproducible and signed, but never started.
 Added the `smoke` job; `COPY --chmod=0755`.
 Compromised action/dependency: revert pin, rebuild, re-sign, advisory. Broken reproducibility: download both
-artifacts of the failed run, diff layers (see chapter 03).
+artifacts of the failed run, diff layers (see "Known risks" above).

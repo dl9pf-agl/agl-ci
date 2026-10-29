@@ -27,7 +27,7 @@ Each entry: decision, reason, alternatives not taken.
 | CVE scanning: Grype on the signed SPDX SBOM; sbom-cve-check / VulnScout for the Yocto track | Grype matches Debian advisories; sbom-cve-check is built for Yocto SPDX 3 (CPE/NVD) | Trivy (VEX support unclear), NVD-only matching on Debian (noisy) |
 | CVE policy: two selectable bars (build, release), both **report only** now (`policy/cve.env`, chapter 09) | Failing at release is too late, it should only catch zero-days between tag and release; fail early at build | One bar at release only; block from day one |
 | Waivers = reviewed OpenVEX files in the repo, always listed in the report | Suppressions stay auditable | Ignore lists in scanner config (invisible in the report) |
-| Weekly re-scan of released SBOMs (`scripts/recheck-sbom.sh`) | CRA ongoing vulnerability handling evidence | Scan at release only |
+| Weekly re-scan of released SBOMs (`scripts/recheck-sbom.sh`, planned, not written) | CRA ongoing vulnerability handling evidence | Scan at release only |
 | Reviewers: solo now, 2 reviewers + no self-review once staffed; report marks `single-approver` | GitHub cannot block self-review with one person; weakness must be visible | Second account now; org team minimum 2 |
 | R1 reproducibility: third rebuild on the Debian server at release time; if the kit is not live the report says `R1 pending` | Independent infrastructure and operator | Hosted-only rebuild (same cloud, weaker independence); independent third party (R2, later) |
 
@@ -55,7 +55,7 @@ Each entry: decision, reason, alternatives not taken.
 | Publish/sign logic in `scripts/`, workflow calls them | Forge-independent, locally testable, templatable | Inline YAML steps |
 | Drop hadolint; keep actionlint, zizmor, shellcheck | Two small Dockerfiles; findings were cosmetic | Keep all four |
 | Keep DinD default, keep two independent build runners | User decision: DinD needed for kas-container flows; independence of the per-push check | DIND=0 (simpler, removes docker-cli CVEs); single-job double build |
-| Chapters merged (08->03, 12->09), Yocto experiment deferred | Fewer stubs; YAGNI | Keep 13 chapters |
+| Chapters merged (the first 08 into 03, the first 12 into 09; the numbers were reused later), Yocto experiment deferred | Fewer stubs; YAGNI | Keep every topic as its own stub chapter |
 
 ## Layer CI (decided 2026-10-22)
 | Decision | Reason | Alternatives considered |
@@ -72,3 +72,12 @@ Each entry: decision, reason, alternatives not taken.
 | The mirror is the cache of the trusted pool, served read-only; the untrusted pool reads it over HTTPS; no copy step on one host, a pull sync from the web host when the web server moves (2026-10-26, chapter 15); the web server is an nginx container with the cache mounted read-only. Consistency rules instead of an atomic pair of sstate and hashserv | The hashserv reports a unihash just before the sstate object is written (sstate.bbclass), so a hashserv that is ahead of the mirror only costs a miss; the hurting case is an object that never reaches the mirror | Cron copy with a hashserv database snapshot (more parts); sstate by taskhash without hashserv (no equivalence reuse) |
 | Outage drill first (`BB_NO_NETWORK=1`, fetchall, later full offline build) | Shows which fetches are still uncovered before any mirror is built | Build the mirrors first and find gaps in production |
 | A pull request always runs tier `push-pr` and mode `build` | The caller file comes from the pull request, so its inputs cannot be trusted | Trust the input |
+
+## Layer CI, later decisions (2026-10-28 and 2026-10-29)
+| Decision | Reason | Alternatives considered |
+|---|---|---|
+| `meta-agl`, `meta-agl-demo`, `meta-agl-devel` float on the tip of their branch in CI; external layers stay pinned in agl-ucb `kas/pins.yml`; a release uses a written-out pin (`resolved-pins.sh`, chapter 13) | A real integration test of the chain; a pin of the repo under test would otherwise beat the generated pin (kas applies `overrides:` last) | Pin all (a PR of demo or devel builds the pinned master and goes green without building) |
+| The `ci/build-matrix.yaml` of a pull request is untrusted input, validated on load (chapter 13) | Its values reach kas paths, shell strings and artifact paths | Trust it because the pool is restricted |
+| Build job limit 24 h (was 10 h) | Cold Qt and Flutter demo images ran into 10 h; finished tasks stay in the sstate | Longer only for some images; one image at a time |
+| Full-SHA pinning of actions enforced on all five repos (2026-10-29); the update churn is to be reviewed later | Supply-chain rule; a scan showed no unpinned `uses:` | Enforce on agl-ci only |
+| Claude Code guidance = plain `.claude/skills/` in each repo; no plugin, no marketplace | Simple, reviewable with the code; shared skills are copies | A plugin from a marketplace repo |
