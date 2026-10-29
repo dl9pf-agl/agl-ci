@@ -8,6 +8,7 @@ description: How the AGL CI build hosts and runner pools work (kit/deploy.sh, up
 Verified behaviour from the kit and from running it. Chapter 05 of `docs/manual` is the long form; this is the part that bites.
 
 ## Model
+- **Limits:** two containers per slot, two sets of limits. `MEM_LIMIT_RUNNER`/`CPU_LIMIT_RUNNER` (24g, 8) bound the runner container; `MEM_LIMIT_SIDECAR`/`CPU_LIMIT_SIDECAR` (default none) bound the Docker sidecar, where `kas-container`'s build container actually runs. The runner limit alone does not bound a build. Old names `MEM_LIMIT`/`CPU_LIMIT` are read as RUNNER values. Chapter 05, "Limits of a slot".
 - **Lint slots:** `LINT_SLOTS` (default 1) extra slots after the pool slots, label `agl-lint` (trusted) or `agl-fork-lint` (untrusted), 4g/2 CPUs, no cache or hash server; only `repo-lint.yml` targets them. Update hosts before moving a caller's pin of `repo-lint.yml`, else the lint job queues (chapter 05, "Lint slots").
 - A host serves **one pool**: `trusted` (label `agl-pr`: same-repo PRs, push, nightly, release) or `untrusted` (label `agl-fork`: fork PRs). Never both (`deploy.sh` refuses; `FORCE_POOL_CHANGE=1` + empty `CACHE_DIR` to move).
 - Per slot (`systemctl agl-runner@N`, `run-loop.sh`): own network, workspace volume and a privileged `docker:dind` sidecar, then an unprivileged runner container with a **single-use JIT config**. One job, then the container exits and the loop registers a new one. The long-lived `GH_TOKEN` stays on the host (`/etc/agl-runner/runner.env`).
