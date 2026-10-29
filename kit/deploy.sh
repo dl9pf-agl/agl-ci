@@ -125,4 +125,4 @@ for u in $(systemctl list-units --all --plain --no-legend 'agl-runner@*.service'
   n="${u#agl-runner@}"; n="${n%.service}"; [ "$n" -le "$total" ] || systemctl disable --now "$u"
 done
 echo "done. status: systemctl status agl-runner@1 ; logs: journalctl -fu agl-runner@1"
-echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners ($POOL pool, $SLOTS slots, label: ${LABELS:-$default_labels}; $LINT_SLOTS lint slots, label: $LINT_LABELS)"
+echo "runner appears in https://github.com/organizations/$ORG/settings/actions/runners ($POOL pool, $SLOTS slots, label: ${LABELS:-$default_labels}; $LINT_SLOTS lint slots, label: ${LINT_LABELS:-$default_lint_labels})"
