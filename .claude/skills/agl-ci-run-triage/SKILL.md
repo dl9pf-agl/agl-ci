@@ -24,7 +24,8 @@ gh run view <id> -R dl9pf-agl/<repo> --json status,conclusion,jobs \
 gh api repos/dl9pf-agl/<repo>/actions/runs/<id>/jobs --jq '.jobs[]|{name,runner_name,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion}]}'
 gh api repos/dl9pf-agl/<repo>/check-runs/<job-id>/annotations --jq '.[]|.message'    # timeout reason
 gh pr checks <n> -R dl9pf-agl/<repo>
-gh api orgs/dl9pf-agl/actions/runners --jq '.runners[]|"\(.name) \(.status) busy=\(.busy)"'
+gh api orgs/dl9pf-agl/actions/runners --paginate --jq '.runners[]|"\(.name) \(.status) busy=\(.busy)"'   # --paginate: without it only 30 entries, mostly stale offline ones
+gh api repos/dl9pf-agl/<repo>/actions/runs/<id>/jobs --jq '.jobs[]|{name,status,runner_name,labels}'            # which machine and label a job asked for / got
 ```
 The log of a **running** job is available through the API, in chunks that lag behind (10 min on one job, 90 min on another that may have stalled or only streamed late): `gh api --allow-escape-sequences repos/dl9pf-agl/<repo>/actions/jobs/<job-id>/logs | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > job.log` (`gh` refuses colour codes without the flag). Compare the last log timestamp with `date -u` before trusting it. Host side: `journalctl -u agl-runner@N` shows only the runner, not the build; `docker stats --no-stream` on the host shows whether a slot's containers use CPU.
 
