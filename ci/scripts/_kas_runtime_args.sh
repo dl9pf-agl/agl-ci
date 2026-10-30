@@ -248,7 +248,7 @@ kas_runtime_args() {
   printf -- '--runtime-args --security-opt --runtime-args label=disable '
 
   if [ -n "${AGL_SSTATE_DIR:-}" ]; then
-    mkdir -p "${AGL_SSTATE_DIR}"
+    mkdir -p "${AGL_SSTATE_DIR}" 2>/dev/null || true   # for local use; the runner container cannot enter CACHE_DIR, deploy.sh made it
     # kas-container only forwards a fixed explicit set of env vars into the container
     # (KAS_WORK_DIR, USER_ID, TERM, ...) - AGL_SSTATE_DIR itself needs -e too, or
     # ${AGL_SSTATE_DIR} stays unexpanded in local.conf despite kas's `env:` passthrough
@@ -258,7 +258,7 @@ kas_runtime_args() {
       "${AGL_SSTATE_DIR}" "${AGL_SSTATE_DIR}" "${AGL_SSTATE_DIR}"
   fi
   if [ -n "${AGL_DL_DIR:-}" ]; then
-    mkdir -p "${AGL_DL_DIR}"
+    mkdir -p "${AGL_DL_DIR}" 2>/dev/null || true
     printf -- '--runtime-args -v --runtime-args %s:%s --runtime-args -e --runtime-args AGL_DL_DIR=%s ' \
       "${AGL_DL_DIR}" "${AGL_DL_DIR}" "${AGL_DL_DIR}"
   fi

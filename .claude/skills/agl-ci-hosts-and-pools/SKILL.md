@@ -19,7 +19,7 @@ Verified behaviour from the kit and from running it. Chapter 05 of `docs/manual`
 ## Commands
 - Update: `./kit/update.sh` (git pull --ff-only, deploy, restart all slots). Token, `POOL`, `MIRROR_URL`, `CACHE_DIR`, `SLOTS`, limits are kept from the last deploy. New image: put the digest in `kit/runner.digest` first.
 - Status: `systemctl status 'agl-runner@*'`, `journalctl -u agl-runner@1 -n 40`, `docker ps`.
-- GitHub's view: `gh api orgs/dl9pf-agl/actions/runners --jq '.runners[]|"\(.name) \(.status) busy=\(.busy)"'`.
+- GitHub's view: `gh api orgs/dl9pf-agl/actions/runners --paginate --jq '.runners[]|"\(.name) \(.status) busy=\(.busy)"'`.
 
 ## Traps
 - **An update or restart kills the job in progress.** Look at the Actions tab first.
