@@ -110,6 +110,31 @@ the slot service restarts (`update.sh` restarts all of them; `systemctl restart 
 Tested by `kit/run-loop_test.sh` (which slot gets which limits; the options reach both `docker run` calls) and `kit/deploy_test.sh`
 (what a plain update keeps, the old names); not tested on a host yet.
 
+## Build node tuning
+Linux already uses all free RAM as page cache, so "more disk cache" is not a switch. What can be tuned is how long **written** data stays in RAM
+before it goes to disk, and which kernel caches are given up first. A Yocto build writes millions of small temporary files and deletes most of them
+again; with a long write-back window they often never reach the disk, and the file metadata stays cached. `kit/sysctl/90-agl-ci-cache.conf` (six
+`vm.*` settings, each explained in the file) does this. The numbers are from the kernel documentation (the dirty ratios are percentages of
+*available* memory, free plus reclaimable, not of total memory; `vm.vfs_cache_pressure = 0` is avoided on purpose, the kernel documents out-of-memory
+conditions for it). Apply it by hand, on a **build node**, as root; `deploy.sh` does not do it because it changes the whole machine:
+```
+sysctl -a 2>/dev/null | grep -E '^vm\.(swappiness|vfs_cache_pressure|dirty_)' > ~/sysctl-before.txt     # the old values, for the way back
+sudo install -m 0644 kit/sysctl/90-agl-ci-cache.conf /etc/sysctl.d/
+sudo sysctl --system
+sysctl vm.swappiness vm.vfs_cache_pressure vm.dirty_background_ratio vm.dirty_ratio vm.dirty_expire_centisecs vm.dirty_writeback_centisecs
+```
+The last command must print the new values (1, 25, 40, 80, 30000, 3000). Things to know:
+- Data written **without `fsync`** can be lost on a crash or power failure, up to the 5 minutes of the window. Build output and sstate objects can be
+  rebuilt; data that a program flushes with `fsync` is not affected.
+- **Not on the cache host** (the machine whose `CACHE_DIR` is the mirror, or that holds the hash database): there the data is the source of truth.
+  On today's single trusted host both roles share the machine, so decide there; with separate roles only the builders get the file.
+- When the dirty limit is reached, writers wait until the disk has caught up: seconds on NVMe, minutes on spinning disks.
+- A container's memory limit (`MEM_LIMIT_SIDECAR`, "Limits") counts the cache it uses; leave room above what the build itself needs.
+- **The gain is not measured yet.** A warm gate writes little; the effect belongs to the cold builds. Look at `grep -E 'Dirty|Writeback' /proc/meminfo`
+  during a build and compare cold build times before and after.
+- Way back: delete `/etc/sysctl.d/90-agl-ci-cache.conf`, then set each old value from `~/sysctl-before.txt` with `sudo sysctl -w name=value` (or
+  reboot); deleting the file alone does not change the running values.
+
 ## Shared cache (trial)
 `deploy.sh` creates `CACHE_DIR` (default `/srv/agl-cache`) with `sstate/` and `dl/`. The parent is `root:root 0700`, the two folders
 belong to uid 1001 (see "Host requirements": that is the runner user inside the image, not an account of the host).
