@@ -36,7 +36,7 @@ In the log: `Sstate summary: Wanted W Local L Missed M ...` (M = tasks that real
 | Symptom | Likely cause | Check |
 |---|---|---|
 | `queued` for hours | no free runner of that label: slots busy with cold builds, or the host is in the gap after a job (see `agl-ci-hosts-and-pools`) | runner list above; wait ~30 min before calling it an outage |
-| `cancelled` after exactly 10 h | job limit; annotation "exceeded the maximum execution time of 10h0m0s". 24 h limit comes only with a caller pin on agl-ci ≥ the timeout PR | annotations |
+| `cancelled` after exactly 10 h | job limit; annotation "exceeded the maximum execution time of 10h0m0s". the 24 h limit comes with a caller pin on agl-ci ≥ the timeout PR, the 48 h limit with a pin on the commit that made it 2880 | annotations |
 | Scheduled run starts hours after its cron | GitHub delays `schedule` events (the 01:17 UTC nightly was created at 07:03) | `gh run list --event schedule` |
 | Fork PR waits | `agl-fork` host offline, or approval pending | runner list, `approve` job |
 | `matrix` fails | matrix validation (`... is not allowed`) or checkout failed or tree not at pin | step log of `matrix` |

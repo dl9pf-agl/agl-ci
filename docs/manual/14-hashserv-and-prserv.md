@@ -156,8 +156,11 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
   **On the trusted test host (2026-10-29/30):** the container runs there, the host is wired with `HASHSERV_RW` (and the untrusted host with
   `HASHSERV_UPSTREAM`), and a full `agl-image-minimal` gate ran with `kas/local/hashserv-rw.yml` in its kas command line: 20 min 40 s, no
   `Error contacting Hash Equivalence Server` in the log. The first attempt, before the firewall step 5 above, logged `[Errno 110]` timeouts and
-  was still green, only slower. Not seen yet: the server's own log with the connections of a build, a build on the untrusted host that reads the
-  upstream, and an equivalence that saved a rebuild.
+  was still green, only slower. Seen in the server log on 2026-10-30: 3354 connections from the address range 172.17.0.0/16 (the Docker bridge; the
+  host's own tests also arrive from 172.17.0.1, so the count shows use by builds only together with its size), none from 192.168.0.0/16, and
+  outside probes only on the read-only ports. A `bitbake-hashserv -r` refuses `clean-unused`, `remove` and `gc-mark` although its start line lists
+  `@db-admin` for anonymous users (tested locally, bitbake 2.18). Not seen yet: a build on the untrusted host that reads the upstream, and an
+  equivalence that saved a rebuild.
 - **Do not wire the hash server (or an sstate mirror) into `yocto-check-layer`.** Measured locally with the same pins: the tool then asks for
   every task, so a run takes longer, not shorter (the first step 4:19 without, 10:38 with a mirror on localhost that answers at once, 23:46 with
   the real mirror and the real read-only hash server). `check-layer.sh` uses the bare config with only the shared download directory, on purpose.
