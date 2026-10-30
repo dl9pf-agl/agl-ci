@@ -152,7 +152,15 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
   and the read-write port must not be reachable from untrusted hosts (bind it as described above). Tested with bitbake 2.18
   against local `bitbake-hashserv` instances: the first fragment sends the build's lookups to the server (11 requests
   counted by the server for `bitbake -S none zlib-native`), the second makes bitbake start the local server with the given
-  upstream and the upstream receives the lookups (1 to 14). Not tested: a full build, and the container on the build host.
+  upstream and the upstream receives the lookups (1 to 14).
+  **On the trusted test host (2026-10-29/30):** the container runs there, the host is wired with `HASHSERV_RW` (and the untrusted host with
+  `HASHSERV_UPSTREAM`), and a full `agl-image-minimal` gate ran with `kas/local/hashserv-rw.yml` in its kas command line: 20 min 40 s, no
+  `Error contacting Hash Equivalence Server` in the log. The first attempt, before the firewall step 5 above, logged `[Errno 110]` timeouts and
+  was still green, only slower. Not seen yet: the server's own log with the connections of a build, a build on the untrusted host that reads the
+  upstream, and an equivalence that saved a rebuild.
+- **Do not wire the hash server (or an sstate mirror) into `yocto-check-layer`.** Measured locally with the same pins: the tool then asks for
+  every task, so a run takes longer, not shorter (the first step 4:19 without, 10:38 with a mirror on localhost that answers at once, 23:46 with
+  the real mirror and the real read-only hash server). `check-layer.sh` uses the bare config with only the shared download directory, on purpose.
 
 ## Roll-out
 1. Now: trial as in chapter 05. Local `auto` server, database in the shared sstate directory, every slot read-write.
