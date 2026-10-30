@@ -159,8 +159,12 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
   was still green, only slower. Seen in the server log on 2026-10-30: 3354 connections from the address range 172.17.0.0/16 (the Docker bridge; the
   host's own tests also arrive from 172.17.0.1, so the count shows use by builds only together with its size), none from 192.168.0.0/16, and
   outside probes only on the read-only ports. A `bitbake-hashserv -r` refuses `clean-unused`, `remove` and `gc-mark` although its start line lists
-  `@db-admin` for anonymous users (tested locally, bitbake 2.18). Not seen yet: a build on the untrusted host that reads the upstream, and an
-  equivalence that saved a rebuild.
+  `@db-admin` for anonymous users (tested locally, bitbake 2.18).
+  **Untrusted host (2026-10-30, test pull request from the fork, meta-agl#16, closed):** `agl-image-minimal` built there in 30 min 2 s with an empty
+  local cache. The `validate` step printed `mirror=set ... hashserv_upstream=set`, the sstate summary read `Wanted 3537 Local 0 Mirrors 3532 Missed 5
+  (99% match)`, the log has no `Error contacting Hash Equivalence Server`, and the connections from that host to the read-only server in the
+  server log went from 4 to 16 during the build. So the upstream and the mirror work from an untrusted host. Not seen yet: an equivalence that
+  saved a rebuild.
 - **Do not wire the hash server (or an sstate mirror) into `yocto-check-layer`.** Measured locally with the same pins: the tool then asks for
   every task, so a run takes longer, not shorter (the first step 4:19 without, 10:38 with a mirror on localhost that answers at once, 23:46 with
   the real mirror and the real read-only hash server). `check-layer.sh` uses the bare config with only the shared download directory, on purpose.
