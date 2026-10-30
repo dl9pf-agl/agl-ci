@@ -112,7 +112,7 @@ checked to fail against the code before this change. What a hostile matrix can s
 trust level, which the pull request's own recipes can do anyway.
 
 ## Job time limit
-The `build` job has `timeout-minutes: 1440` (24 h). The first build of an image on an empty cache is cold: `agl-image-minimal` took
+The `build` job has `timeout-minutes: 2880` (48 h; it was 10 h, then 24 h, which left about 2 h of margin for a cold Flutter demo image next to a second cold build). The first build of an image on an empty cache is cold: `agl-image-minimal` took
 about 4h28 (268 min), and two cold demo images (`agl-ivi-demo-flutter`, `agl-ivi-demo-qt`, built side by side on the two slots of the trusted host)
 did not finish in the former 10 h and were cancelled. Tasks that finished are kept in the shared sstate, so a re-run resumes where
 the cancelled one stopped and a warm build takes minutes. A job that hangs ties up a slot for the whole limit.
