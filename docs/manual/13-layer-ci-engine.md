@@ -68,9 +68,12 @@ M17/M20). Tested: with the file alone a tree moved to older commits was brought 
 The commits must be on the declared branch (`base.yml` says `branch: master`); a commit that is not on it makes kas fetch.
 
 ### yocto-check-layer
-`validate.sh` checks `meta-agl/meta-agl-core` by default. `check_layers.default` in a repo's matrix adds
+It is not part of `validate.sh` and not part of the matrix: the job `check-layer` of `layer-ci.yml` runs it once per workflow run, in parallel with the
+`build` jobs, against the bare oe-core config (no machine, features or target). Its job log is the full output of the tool, test by test; before this it ran inside
+every matrix entry (about 13 minutes each time). The required check `result` waits for both.
+`check-layer.sh` checks `meta-agl/meta-agl-core` by default. `check_layers.default` in a repo's matrix adds
 layers to that default for every run in scope. The demo and devel matrices list their layers (so `CHECK_LAYERS=all` and
-`CHECK_LAYERS="..." ci/scripts/validate.sh` can check them) but keep `default: []`: **not active** until the layers pass; see M19.
+`CHECK_LAYERS="..." ci/scripts/check-layer.sh` can check them) but keep `default: []`: **not active** until the layers pass; see M19.
 
 ## Executing kas
 `KAS_EXEC=kas-container` (default): `kas-container` with `KAS_CONTAINER_IMAGE` (the signed builder, by digest) and
@@ -120,10 +123,11 @@ git clone https://github.com/dl9pf-agl/agl-ucb && cd agl-ucb
 # the first engine run clones the layers via kas; for local edits see the agl-ucb README (--dev)
 git clone https://github.com/dl9pf-agl/agl-ci ../agl-ci
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/validate.sh --machine qemux86-64 --target agl-image-minimal
+AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/check-layer.sh      # yocto-check-layer, once per run in CI
 AGL_TREE=$PWD CI=true ../agl-ci/ci/scripts/build.sh    --machine qemux86-64 --target agl-image-minimal
 ```
 `validate.sh --verbose` prints the configuration, the output of every check live in a collapsible log group (`::group::`) with its
-command and duration, the complete output of `yocto-check-layer` as the tool writes it (no extra options), a `::error` annotation for a failed check, the last 40 lines of a failed check repeated outside its (collapsed) group, and a summary table at the end; without the flag only
+command and duration, a `::error` annotation for a failed check, the last 40 lines of a failed check repeated outside its (collapsed) group, and a summary table at the end; without the flag only
 `running` / `PASSED` / `FAILED` lines appear and the output goes to `build/validate-results/<check>.log`. `layer-ci.yml` passes
 `--verbose` in the `validate` step (one flag on one line, with a comment): delete it to quiet the job log again. Addresses (mirror,
 hash server) are shown as `set` or `unset`, because the job log of a public repository is public. Tested by

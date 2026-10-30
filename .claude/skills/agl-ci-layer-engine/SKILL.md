@@ -33,7 +33,7 @@ helpers use `$PY` = `/opt/kas/bin/python` when present (PyYAML only lives in the
 ## Engine flow
 `matrix` job (hosted): checkout agl-ci@workflow_sha + agl-ucb@ucb_ref, cosign verify builder digest
 (`scripts/verify-release.sh`), run `ci/scripts/checkout.sh` inside the builder image (`--entrypoint /bin/bash`, KAS_EXEC=kas),
-then `_matrix.py --json $tier`. `build` job on `[self-hosted, agl-pr]`: checkouts, `layers` step (checkout.sh), `validate.sh --verbose` (flag in layer-ci.yml: delete it to quiet the log; output in `::group::`s, addresses shown as set/unset),
+then `_matrix.py --json $tier`. `check-layer` job (once per run, parallel to `build`: `check-layer.sh`, full yocto-check-layer output in its log). `build` job on `[self-hosted, agl-pr]`: checkouts, `layers` step (checkout.sh), `validate.sh --verbose` (flag in layer-ci.yml: delete it to quiet the log; output in `::group::`s, addresses shown as set/unset),
 `build.sh`, upload artifacts. `result` aggregates. Env: `AGL_TREE`, `KAS_EXEC=kas-container|kas`, `AGL_SCOPE`.
 Matrix tiers: `push-pr | nightly | release | dispatch`. Digests: `ci/builder.digest`; bump via PR after `images` publishes.
 
