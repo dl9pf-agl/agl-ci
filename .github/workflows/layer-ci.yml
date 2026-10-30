@@ -214,9 +214,41 @@ jobs:
             tree/build/fetch-results/**
           retention-days: ${{ needs.matrix.outputs.tier == 'push-pr' && 7 || needs.matrix.outputs.tier == 'nightly' && 30 || 90 }}
 
+  # yocto-check-layer runs against a bare oe-core config, not against the image, so it does not depend on a matrix entry: one run
+  # per workflow run, next to the build jobs, instead of once per image inside each of them (about 13 minutes each).
+  check-layer:
+    needs: [matrix, approve]
+    if: always() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' && needs.matrix.outputs.mode == 'build'
+    runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
+    timeout-minutes: 120
+    permissions: { contents: read }
+    env:
+      CI: "true"
+      AGL_TREE: ${{ github.workspace }}/tree
+      AGL_SCOPE: ${{ inputs.repo || github.event.repository.name }}
+      KAS_EXEC: ${{ inputs.kas_exec }}
+      KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/agl-ucb
+          ref: ${{ inputs.ucb_ref }}
+          path: tree
+          persist-credentials: false
+      - name: layers
+        run: agl-ci/ci/scripts/checkout.sh
+      - name: yocto-check-layer
+        run: agl-ci/ci/scripts/check-layer.sh
+
   # The only required status check of a caller repo.
   result:
-    needs: [matrix, approve, build]
+    needs: [matrix, approve, build, check-layer]
     if: always()
     runs-on: ubuntu-24.04
     permissions: {}

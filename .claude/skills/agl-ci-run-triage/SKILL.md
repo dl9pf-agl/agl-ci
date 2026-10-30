@@ -9,7 +9,7 @@ Always read the state from GitHub; do not infer it. Repo-qualify PR numbers (agl
 
 ## Anatomy of a run
 `ci / matrix` (hosted runner, read-only token): checks out agl-ci at the pinned SHA and agl-ucb at the default branch **at run time**, runs `checkout.sh`, computes the matrix. Outputs: `count`, `matrix`, `pool`, `mode`, `tier`, `builder`. Job summary: "Resolved pins of this run" (from agl-ci#38 on).
-`ci / approve` (skipped unless fork PR) → `ci / build (<repo>/<target> on <machine>)` on `[self-hosted, <pool>]` → `ci / result` (the only required check).
+`ci / approve` (skipped unless fork PR) → `ci / build (<repo>/<target> on <machine>)` and, in parallel, `ci / check-layer` (once per run: yocto-check-layer, its log is the tool's output) on `[self-hosted, <pool>]` → `ci / result` (the only required check; waits for both).
 
 ## Is green real?
 - **Vacuous green:** `matrix` ok but no `build` jobs / `count=0`. Cause seen: the tree was not at the commit under test (pin lost to an `overrides:` pin). Callers pinned to agl-ci `31d44b2` or older **lack** the "tree is at the commit under test" failure and the count warning; check the caller's `uses:` SHA.
