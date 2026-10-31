@@ -306,7 +306,7 @@ A restart kills the job in progress (the first pilot build died this way). Check
 Lesson (2026-10-22): the first version requested the JIT config before preparing the sidecar, so a failing engine created one stale runner registration every ~11 s (44 in 6 minutes).
 
 ## Security notes
-- The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`.
+- The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`. See "Sidecar privilege: what was tested" below.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.
 - Runner container: non-root, default caps, `seccomp=unconfined` (bitbake `unshare()`).
 - Bind mounts besides the per-job workspace volume: only `CACHE_DIR` (read-write; one pool per host). The mirror web server mounts it read-only.
@@ -367,6 +367,36 @@ fork dl9pf/meta-agl on a trusted host (base dl9pf-agl/meta-agl, event 'pull_requ
 closed and the branch deleted. Not known: whether the `env:` values of the workflow reach the hook at all (the refusal does not depend on it).
 Not done: a fork job on the **untrusted** host after the hook update, and the test with a second GitHub account.
 
+## Sidecar privilege: what was tested
+Findings of 2026-10-31, from a throwaway Docker 28.0.4 daemon on a workstation (kernel 7.2, cgroup v2, **AppArmor off**, root filesystem an overlay, so the
+inner `/var/lib/docker` was a tmpfs). Nothing was changed on a build host. The raw numbers are in `measurements.md` of the working directory.
+
+**What `--privileged` gives the sidecar.** All host devices (218 entries in `/dev` against 16 without it), all capabilities, no seccomp or AppArmor
+profile, writable `/sys` and `/proc/sys`. A job that can reach the sidecar's Docker (`tcp://agl-dN:2375`, no TLS, on the slot's private network) can read the
+raw host disk from the sidecar and from a nested `--privileged` container. The sidecar is therefore a cleanup and blast-radius device (no host Docker socket
+in the job, per-slot state removed after every job, limits that contain an out-of-memory build), **not a security boundary**; the boundaries are one pool per
+host, no secrets and no read-write hash server on the untrusted host, the job-started hook, and the approval gate.
+
+**Narrowing it.**
+| Outer container | Result |
+|---|---|
+| `--privileged` (today) | works; host disks readable |
+| `--entrypoint sh --cap-add SYS_ADMIN --cap-add NET_ADMIN --security-opt seccomp=unconfined --security-opt apparmor=unconfined`, command `mount -o remount,rw /sys/fs/cgroup && exec dockerd-entrypoint.sh` (variant B1) | inner dockerd up in 18 s (17 s privileged); nested containers run with `--network none`, `--memory` works; **host disks are not reachable**, also not from a nested `--privileged` container. But **a nested container on the inner bridge fails** (`failed to disable IPv6 on container's interface eth0`) because `/proc/sys` is read-only |
+| B1 + `--security-opt systempaths=unconfined` (B2) | nested bridge works and reaches the internet; the 1.35 GB builder image pulls inside the sidecar in 29 s. **But the host-global `/proc/sys/kernel/core_pattern` is writable from the sidecar**, the classic route from `SYS_ADMIN` to code execution as host root; most of the gain is lost |
+| `SYS_ADMIN` only, inner dockerd `--bridge=none --iptables=false --ip6tables=false`, nested containers on `--network host` (the outer container's own network namespace) (variant C) | inner dockerd up in 18 s without `NET_ADMIN`; a nested `docker run --network host` failed on the test machine with `failed to create default sandbox: operation not permitted`. That machine refuses `unshare -n` in every variant, so this may be its limit; **untested on a real host** |
+
+Without the cgroup remount the dind entrypoint stops with `mkdir: can't create directory '/sys/fs/cgroup/init': Read-only file system`.
+
+**Conclusion.** Plain capabilities do not make a boundary as long as nested containers need a bridge network: the bridge needs a writable `/proc/sys`, and
+a writable `/proc/sys` hands the host a root route. Not tested: AppArmor on Debian 13, a real kas build in the narrowed sidecar, the cache bind mounts, the
+outer engine of the build hosts. Candidates, in order of effort: (1) variant C on a real host (an untrusted host, with a fork test pull request), which also
+needs `--runtime-args --network=host` for kas-container; (2) Sysbox, which virtualises `/proc/sys` (community-maintained; `/dev/kvm`, a Debian 13 package and
+the uid mapping of the cache are unconfirmed); (3) one VM per slot, the only real boundary and the most work.
+
+**`/dev/kvm`.** `run-loop.sh` passes it to the sidecar and the runner whenever the host has it. It was meant for QEMU boot tests, but the build matrix and the
+scripts contain no boot test (`testimage`, `runqemu`); the only user is `runner-smoke.yml`, which lists the device. The build does not need it, so it can be
+dropped from both containers until a boot-test job exists (the `agl-kvm` label is reserved for that).
+
 ## Open points
-`/dev/kvm` inside nested kas containers; necessity of `seccomp=unconfined`; Podman path untested. (The old bare-host test runner
+Necessity of `seccomp=unconfined` on the runner container (bitbake runs in the nested container, not in the runner container; untested); Podman path untested. (The old bare-host test runner
 was removed from the org.)
