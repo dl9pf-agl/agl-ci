@@ -41,12 +41,18 @@ The chapters keep their numbers because scripts, skills and other chapters cite 
 |---|---------|---------|
 | 11 | [Templating and portability](11-templating.md) | Adopting agl-ci elsewhere, GitLab/Forgejo path |
 
+### Part F Presentation
+| # | Chapter | Content |
+|---|---------|---------|
+| 17 | [Demo run-through](17-demo-script.md) | Seven scenes with commands and expected output, checklist for the evening before |
+
 ## Which chapter do I need?
 - Host administrator (set up, update or repair a build host): 05, then 15 for mirrors and caches.
 - Layer maintainer (matrix, callers, a red or empty CI run): 13.
 - Release engineer (signing, keys, hand-over): 06, 04.
 - Security reviewer (trust rules, CVE policy, hardening): 01, 12, 13 ("Trust rules"), 09.
 - Adopter on another forge or org: 11.
+- Presenter (showing the CI to somebody): 17.
 
 ## Status words
 Status legend used in the chapters: **in use** (runs in CI or on the hosts), **implemented** (written and tested locally, not
