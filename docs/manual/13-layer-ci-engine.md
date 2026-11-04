@@ -138,7 +138,7 @@ the KVM demo on **qemuarm64** (host and guest aarch64): 1 h 17 min the first tim
 x86-64 variant is shelved.
 
 **Xen test image.** Skipped (`tiers: []` in the devel matrix) since the x86-64 failure of the same kind (guest `virtio-aarch64` on an x86-64 host, `do_rootfs` after 6 h).
-A test of the Xen test image on raspberrypi5 was started on 2026-11-04 (its result is added here); the ordering problem above means that its Raspberry Pi settings are skipped under kas.
+A test of the Xen test image on **raspberrypi5** (2026-11-04, throw-away branch, run 41896612448) succeeded: 1 h 36 min, 12129 tasks all succeeded, `Sstate summary` 91% match, image artifact 1.7 GB. But the build used the generic `rpi-u-boot-scr` and not `xen-rpi-u-boot-scr`: the Raspberry Pi 5 settings of `mc-conf-default-raspberrypi5.inc` were skipped, as the ordering problem above predicts. The image contains Xen (`xen-4.21.0`) but not the Xen boot setup; fixing the hook in the layer and a boot test on hardware are open.
 
 **Reading the `Sstate summary`.** `Wanted W Local L Missed M`: `L/W` is the share restored from the cache. Cached images show 99% (minimal, Flutter demo; a rebuild of
 the KVM demo). A low value that repeats night after night, with the same `Missed` number, means objects that are never stored or never match: look at the
