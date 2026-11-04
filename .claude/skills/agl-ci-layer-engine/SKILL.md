@@ -47,5 +47,6 @@ Matrix tiers: `push-pr | nightly | release | dispatch`. Digests: `ci/builder.dig
 - Generated pin writes the repo under test under `repos:` **and** `overrides:`; the matrix job fails if the tree is not at the commit under test (`agl-ci-trust-and-security`).
 - `_matrix.py` validates matrix files as untrusted input; shared names in `ci/matrix-defaults.yaml` (`machine_sets`, `tier_presets` with `machine_tiers`); `needs:` builds demo after meta-agl and devel after demo (`AGL_SCOPE`).
 - meta-agl, -demo, -devel float on their branch; `resolved-pins.sh` writes the release pin (`agl-ci-release-and-pins`).
+- **Trap, kas puts `MACHINE` last:** an `include x-${MACHINE}.inc` evaluated at local.conf time is silently skipped (xen, kvm hooks); read such hooks from a multiconfig file or a recipe. **To build one entry:** throw-away branch with `tiers: [push-pr]` on that entry, dispatch with `--ref <branch> -f tier=push-pr` (chapter 13). A caller must pass `mode` itself (`with: mode: ${{ inputs.mode || 'build' }}`).
 - Labels in use: `agl-pr` (trusted), `agl-fork` (untrusted), `agl-kvm` reserved; `agl-release` is unused. Build job limit 48 h. Reading runs: `agl-ci-run-triage`; hosts: `agl-ci-hosts-and-pools`; caches: `agl-ci-mirror-and-cache`.
 
