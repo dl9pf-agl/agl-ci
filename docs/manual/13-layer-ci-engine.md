@@ -16,9 +16,11 @@ ref to build with, default branch when empty; use it to test an agl-ucb branch b
 pinned in `ci/builder.digest` and verified (`scripts/verify-release.sh`) in the `matrix` job. Bump the digest after every
 published builder (digest in the `publish` job log of the `images` run on `main`).
 
-**The caller needs no inputs.** `layer-ci.yml` takes the repo under test from `github.event.repository.name`, and the tier and
-mode of a manual run from the event's own inputs; a caller may still pass `repo`, `tier` and `mode`. A caller is the triggers
-plus one `uses:` line pinned by commit.
+**The caller needs almost no inputs.** `layer-ci.yml` takes the repo under test from `github.event.repository.name` and the tier of a
+manual run from the event's own input (`inputs.tier || github.event.inputs.tier`). **The mode is the exception:** the default `build` of the
+reusable workflow is not empty, so it always wins over the event's input, and a caller that offers a `mode` choice in its `workflow_dispatch`
+must pass it on: `with: mode: ${{ inputs.mode || 'build' }}` (meta-agl always did; meta-agl-demo and meta-agl-devel since 2026-11-02, before
+that a dispatch with `mode=fetch` started a full build there). A caller is the triggers plus one `uses:` line pinned by commit.
 
 ## Layout
 - **Build tree** = a checkout of `agl-ucb` (kas fragments, `kas/pins.yml`). kas clones `meta-agl`, `meta-agl-demo`
@@ -67,6 +69,14 @@ build it with `kas/base.yml:...:resolved-pins.yml` in place of `kas/pins.yml`, a
 M17/M20). Tested: with the file alone a tree moved to older commits was brought back to exactly the recorded commits, offline.
 The commits must be on the declared branch (`base.yml` says `branch: master`); a commit that is not on it makes kas fetch.
 
+### Build exactly one entry (throw-away branch)
+A dispatch builds all entries of a tier, and the tiers are fixed (`push-pr`, `nightly`, `release`, `dispatch`). To build one image, or one image on
+another machine, push a throw-away branch of the layer repo whose `ci/build-matrix.yaml` gives that one entry `tiers: [push-pr]` (no entry of the demo and
+devel matrices uses `push-pr`, so it is the only one), then `gh workflow run ci.yml -R <org>/<repo> --ref <branch> -f tier=push-pr -f mode=build`. The run
+uses the workflow and the matrix of the branch. Check beforehand with the loader (`AGL_TREE=<tree of the three repos> AGL_SCOPE=<repo> python3
+ci/scripts/_matrix.py --json push-pr` must print exactly that entry) and delete the branch afterwards. A push to a branch without a pull request starts nothing.
+Used on 2026-11-04 for the KVM demo on qemuarm64 (1 h 17 min, then 39 min for the rebuild).
+
 ### yocto-check-layer
 It is not part of `validate.sh` and not part of the matrix: the job `check-layer` of `layer-ci.yml` runs it once per workflow run, in parallel with the
 `build` jobs, against the bare oe-core config (no machine, features or target). Its job log is the full output of the tool, test by test; before this it ran inside
@@ -110,6 +120,29 @@ more than 128 expanded entries (GitHub's own limit is 256 matrix jobs), and an e
 `push-pr` (a pull request never accepts an EULA). `ci/scripts/_matrix_test.py` holds the cases, runs in the lint job, and was
 checked to fail against the code before this change. What a hostile matrix can still do is build chosen images on the pool of its
 trust level, which the pull request's own recipes can do anyway.
+
+## Pitfalls found in the layers (2026-10 / 11)
+**kas puts `MACHINE` last.** kas writes the `local_conf_header` entries of a configuration in the alphabetical order of their keys (`sorted(...)` in
+`Config._get_conf_header`, kas 5.5) and `MACHINE ??= "<machine>"` after all of them. An `include something-${MACHINE}.inc` in a feature file is therefore
+expanded while `MACHINE` is still empty, and since it is an `include` and not a `require` the missing file is skipped without a message. Classic AGL
+(`aglsetup.sh`) sets `MACHINE` first, so the layers work there. Affected: **meta-agl-xen** (`agl-xen-${MACHINE}.inc`, so the x86-64 guest hook is never read, and
+`mc-conf-default-${MACHINE}.inc`, so the Raspberry Pi 4 and 5 settings are skipped) and **meta-agl-kvm-demo** (`agl-kvm-${MACHINE}.inc`; it had no hook file at all).
+A place where `MACHINE` is known: a multiconfig file (`bitbake.conf` parses it after `local.conf` and before the machine conf, so `MACHINE` is still the host's)
+and any recipe. meta-agl-kvm-demo now reads the guest-machine hook there (meta-agl-demo `05f69e1`); tested with real bitbake on a test layer in kas's file
+order: host recipe and guest store were both `virtio-aarch64` before, both `qemux86-64` after. Do not put a fix in the kas files: they must stay valid for any layer.
+
+**KVM demo: aarch64 host.** The layer defaults the guest machine to `virtio-aarch64` and no other virtio machine exists. On `qemux86-64` that is an x86-64 host
+with an aarch64 guest (a whole second world cross-built, 10 to 13 hours, `Sstate summary` 65% every night); with the hook the guest is `qemux86-64` and the build
+runs 5 h 34 min and then fails in `install_guest_images` of `agl-kvm-demo.bb`, which does not find the guest image under that name. The matrix therefore builds
+the KVM demo on **qemuarm64** (host and guest aarch64): 1 h 17 min the first time, 39 min the second, `Wanted 11529 Local 11519 Missed 10 (99% match)`. The
+x86-64 variant is shelved.
+
+**Xen test image.** Skipped (`tiers: []` in the devel matrix) since the x86-64 failure of the same kind (guest `virtio-aarch64` on an x86-64 host, `do_rootfs` after 6 h).
+A test of the Xen test image on raspberrypi5 was started on 2026-11-04 (its result is added here); the ordering problem above means that its Raspberry Pi settings are skipped under kas.
+
+**Reading the `Sstate summary`.** `Wanted W Local L Missed M`: `L/W` is the share restored from the cache. Cached images show 99% (minimal, Flutter demo; a rebuild of
+the KVM demo). A low value that repeats night after night, with the same `Missed` number, means objects that are never stored or never match: look at the
+architecture of the second configuration first. The live job log lags by up to an hour or two; the full log is complete when the job ends.
 
 ## Job time limit
 The `build` job has `timeout-minutes: 2880` (48 h; it was 10 h, then 24 h, which left about 2 h of margin for a cold Flutter demo image next to a second cold build). The first build of an image on an empty cache is cold: `agl-image-minimal` took
