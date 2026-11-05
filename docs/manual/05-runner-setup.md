@@ -153,8 +153,8 @@ Hash equivalence and PR servers: chapter 14. To empty the cache see "Reset and r
 ## Host requirements and what the kit does not assume
 - **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
   root or `sudo`; a rootful Docker (rootless Docker and Podman are untested); network access to GitHub and GHCR; a file system
-  for `CACHE_DIR` that supports Unix owners and modes (not a root-squashed NFS); for QEMU boot tests `/dev/kvm` that any user
-  can open (the default on systemd distributions). On hosts with SELinux enforcing the bind mounts would need `:z`; not done.
+  for `CACHE_DIR` that supports Unix owners and modes (not a root-squashed NFS); for QEMU boot tests `/dev/kvm`. On Debian 13 it is `root:kvm 0660`, not world-readable, so `run-loop.sh` gives the runner container the group of the device
+  (`--group-add`, the gid is read from the host: 993 on one of ours), on the trusted pool only; fork code on an untrusted host gets no KVM. On hosts with SELinux enforcing the bind mounts would need `:z`; not done.
 - **Not needed and not assumed:** any particular user or uid on the host. The runner runs as uid 1001 *inside* the signed image;
   no account with that uid has to exist on the host, and an account that happens to have it (or any other uid) gains nothing.
   Reason: Docker does not remap uids, so the numeric owner of the two mounted cache folders is all that connects the container to
