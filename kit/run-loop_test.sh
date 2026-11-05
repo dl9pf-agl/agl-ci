@@ -31,4 +31,5 @@ expect "old lint names LINT_MEM_LIMIT / LINT_CPU_LIMIT still bound the lint runn
 # the options must really reach the two docker run calls: the sidecar gets sc_limits, the runner container gets the RUNNER limits
 grep -qF '"agl-d$slot" --network "agl-n$slot" "${dev[@]}" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the sidecar limits" || { echo "FAIL  the sidecar docker run does not use sc_limits"; fail=1; }
 grep -qF -- '--memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER"' "$f" && echo "ok    the runner docker run gets the runner limits" || { echo "FAIL  the runner docker run does not use the RUNNER limits"; fail=1; }
+grep -qF '"${dev[@]}" "${kvm_group[@]}" --security-opt seccomp=unconfined' "$f" && echo "ok    the runner docker run gets the group of /dev/kvm" || { echo "FAIL  the runner docker run does not get kvm_group" >&2; fail=1; }
 exit "$fail"
