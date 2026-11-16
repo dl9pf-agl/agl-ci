@@ -13,10 +13,11 @@
 #               POOL (trusted | untrusted, default trusted): a host serves one pool only. trusted = same-repo PRs, nightly,
 #               push, release (label agl-pr); untrusted = fork PRs (label agl-fork). SLOTS = number of slots on this host.
 #               MIRROR_URL (untrusted hosts): where the trusted mirror is read, e.g. https://mirror.example/
+#               GIT_MIRROR=1 (needs MIRROR_URL): kas clones the layers from MIRROR_URL/git/, not from github.com (chapter 15)
 #               LABELS (default by POOL) CACHE_DIR (default /srv/agl-cache)
 #               HASHSERV_RW (trusted hosts) = host:port of the shared read-write hash server; HASHSERV_UPSTREAM (untrusted hosts) =
 #               host:port of the shared READ-ONLY one (agl-ci chapter 14). Both optional; an untrusted host never gets HASHSERV_RW.
-#               POOL, MIRROR_URL and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
+#               POOL, MIRROR_URL, GIT_MIRROR and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -69,7 +70,7 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOK
 # --- config (token stays root-only on the host)
 # POOL and MIRROR_URL stay as deployed before unless given (LABELS too, while the pool stays the same)
 prev_pool="$(old POOL)"; [ -n "$prev_pool" ] || [ ! -f /etc/agl-runner/runner.env ] || prev_pool=trusted   # hosts from before pools are trusted
-POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"
+POOL="${POOL:-${prev_pool:-trusted}}"; MIRROR_URL="${MIRROR_URL-$(old MIRROR_URL)}"; GIT_MIRROR="${GIT_MIRROR-$(old GIT_MIRROR)}"
 case "$POOL" in
   trusted) default_labels=agl-pr; default_lint_labels=agl-lint ;;
   untrusted) default_labels=agl-fork; default_lint_labels=agl-fork-lint ;;
@@ -85,6 +86,8 @@ HASHSERV_RW="${HASHSERV_RW-$(old HASHSERV_RW)}"; HASHSERV_UPSTREAM="${HASHSERV_U
 for v in HASHSERV_RW HASHSERV_UPSTREAM; do
   [[ -z "${!v}" || "${!v}" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]] || { echo "$v must be host:port, got: ${!v}" >&2; exit 1; }
 done
+case "$GIT_MIRROR" in ""|1) ;; *) echo "GIT_MIRROR must be 1 or empty, got: $GIT_MIRROR" >&2; exit 1 ;; esac
+[ -z "$GIT_MIRROR" ] || [ -n "$MIRROR_URL" ] || { echo "GIT_MIRROR=1 needs MIRROR_URL: the git mirror is served by the same web server" >&2; exit 1; }
 install -d -m 0755 /opt/agl-runner
 install -d -m 0700 /etc/agl-runner
 umask 077
@@ -96,6 +99,7 @@ RUNNER_GROUP_ID=1
 LABELS=${LABELS:-$default_labels}
 POOL=$POOL
 MIRROR_URL=$MIRROR_URL
+GIT_MIRROR=$GIT_MIRROR
 HASHSERV_RW=$HASHSERV_RW
 HASHSERV_UPSTREAM=$HASHSERV_UPSTREAM
 MEM_LIMIT_RUNNER=${MEM_LIMIT_RUNNER:-24g}

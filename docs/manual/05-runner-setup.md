@@ -30,7 +30,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
    Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT_RUNNER`,
-   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL` (see "Pools").
+   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -47,11 +47,11 @@ on this host (1..n); a pool can span several hosts.
 Trust assumption: write access to the repo counts as trusted (a same-repo pull request author can already push a branch
 and start CI). A fork pull request can only write the cache of an untrusted host, so it cannot reach a release, the
 mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_MIRROR_URL`; the engine then includes `kas/local/mirrors.yml` of agl-ucb
-(chapter 15, "Consumer settings").
+(chapter 15, "Consumer settings"). `GIT_MIRROR=1` (only together with `MIRROR_URL`) makes the layer clones of kas come from the mirror's `/git/` instead of github.com, which avoids GitHub's throttling of anonymous clones (chapter 15).
 
 Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
 fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and
-`MIRROR_URL` are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
+`MIRROR_URL` (and `GIT_MIRROR`) are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
 an emptied `CACHE_DIR`. The shared hash server is given with `HASHSERV_RW=host:9393` (trusted hosts) or
 `HASHSERV_UPSTREAM=host:9494` (untrusted hosts); `deploy.sh` refuses the wrong one for the pool (chapter 14). `layer-ci.yml` sends fork pull requests to `agl-fork` and everything else to `agl-pr` (chapter 13), so
 an untrusted host must exist before fork pull requests can build; until then they wait in the queue. Set the host up
@@ -194,7 +194,7 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Where things live
 | What | Where |
 |---|---|
-| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL GIT_MIRROR DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |

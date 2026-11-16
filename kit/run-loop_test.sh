@@ -32,4 +32,5 @@ expect "old lint names LINT_MEM_LIMIT / LINT_CPU_LIMIT still bound the lint runn
 grep -qF '"agl-d$slot" --network "agl-n$slot" "${dev[@]}" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the sidecar limits" || { echo "FAIL  the sidecar docker run does not use sc_limits"; fail=1; }
 grep -qF -- '--memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER"' "$f" && echo "ok    the runner docker run gets the runner limits" || { echo "FAIL  the runner docker run does not use the RUNNER limits"; fail=1; }
 grep -qF '"${dev[@]}" "${kvm_group[@]}" --security-opt seccomp=unconfined' "$f" && echo "ok    the runner docker run gets the group of /dev/kvm" || { echo "FAIL  the runner docker run does not get kvm_group" >&2; fail=1; }
+grep -qF -- '-e AGL_GIT_MIRROR=1' "$f" && echo "ok    GIT_MIRROR=1 reaches the job as AGL_GIT_MIRROR" || { echo "FAIL  run-loop.sh does not pass AGL_GIT_MIRROR" >&2; fail=1; }
 exit "$fail"
