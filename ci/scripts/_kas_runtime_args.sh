@@ -64,6 +64,25 @@ mkdir -p "$TREE/build/ci-kas" && cp "$ENGINE/../kas/"*.yml "$TREE/build/ci-kas/"
 # (KAS_CONTAINER_IMAGE, engine KAS_CONTAINER_ENGINE, default docker); KAS_EXEC=kas runs kas in the current
 # environment (e.g. inside the signed runner image). Tools run by kas see the tree at $KAS_WORKDIR.
 if [ "${KAS_EXEC:-kas-container}" = kas ]; then export AGL_WORKDIR="$TREE"; else export AGL_WORKDIR=/work; fi
+# --- begin premirrors (ci/scripts/premirror_test.sh runs this block)
+# KAS_PREMIRRORS for AGL_GIT_MIRROR: one line per mirrored host and no backslash anywhere. kas-container forwards the variable with
+# `eval echo` under /bin/sh (dash on Debian and Ubuntu, whose echo interprets backslash escapes); the first proof build (2026-11-16) got a
+# control character in the clone URL where "\1" stood. So no back-reference and no backslash is used.
+# First matching line wins. The repo under test (AGL_PIN_URL, for a fork pull request the fork) is not on the mirror and must be
+# cloned from where it is: its line maps it to itself, first. A host that is not listed is cloned from its origin.
+agl_premirrors() {
+  local h out=""
+  if [ -n "${AGL_PIN_URL:-}" ]; then
+    [[ "$AGL_PIN_URL" =~ ^https?://[A-Za-z0-9._/-]+$ ]] || { echo "kas_run: AGL_PIN_URL has unexpected characters: $AGL_PIN_URL" >&2; return 1; }
+    out="^${AGL_PIN_URL//./[.]}\$ ${AGL_PIN_URL}"$'\n'
+  fi
+  for h in ${AGL_GIT_MIRROR_HOSTS:-github.com git.openembedded.org git.yoctoproject.org code.qt.io}; do
+    [[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "kas_run: AGL_GIT_MIRROR_HOSTS entry has unexpected characters: $h" >&2; return 1; }
+    out+="^https?://${h//./[.]}/ ${AGL_MIRROR_URL}/git/${h}/"$'\n'
+  done
+  printf '%s' "${out%$'\n'}"
+}
+# --- end premirrors
 kas_run() {
   local v
   for v in AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM; do   # these end up in bitbake configuration: allow only host:port
@@ -76,14 +95,7 @@ kas_run() {
   [ -z "${AGL_MIRROR_URL:-}" ] || export AGL_MIRROR_URL="${AGL_MIRROR_URL%/}"
   if [ -n "${AGL_GIT_MIRROR:-}" ]; then
     [ -n "${AGL_MIRROR_URL:-}" ] || { echo "kas_run: AGL_GIT_MIRROR needs AGL_MIRROR_URL" >&2; return 1; }
-    # First matching line wins; kas-container forwards KAS_PREMIRRORS into the container. The repo under test (AGL_PIN_URL, for a
-    # fork pull request the fork) is not on the mirror and must be cloned from where it is: its line maps it to itself, first.
-    pin_line=""
-    if [ -n "${AGL_PIN_URL:-}" ]; then
-      pin_re="$(printf '%s' "$AGL_PIN_URL" | sed 's/[][\\.*^$+?(){}|/]/\\&/g')"
-      pin_line="^${pin_re}\$ ${AGL_PIN_URL}"$'\n'
-    fi
-    export KAS_PREMIRRORS="${pin_line}^https?://([^/]+)/ ${AGL_MIRROR_URL}/git/\\1/"
+    KAS_PREMIRRORS="$(agl_premirrors)" || return 1; export KAS_PREMIRRORS   # kas-container forwards it into the container
   fi
   if [ "${KAS_EXEC:-kas-container}" = kas ]; then
     (cd "$TREE" && KAS_WORK_DIR="$TREE" kas "$@")
