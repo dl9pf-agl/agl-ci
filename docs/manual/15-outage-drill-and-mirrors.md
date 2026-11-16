@@ -187,7 +187,7 @@ them. `kit/mirror/git-repos-from-kas.py <dirs>` lists the URLs from the kas file
 them in `CACHE_DIR/git/<host>/<path>` (first run clones, later runs update, then `git update-server-info`); nginx serves them as
 `/git/` over plain dumb HTTP (`run.sh` mounts the folder when it exists). Run it as root on the trusted host, from cron or after the
 nightly: `kit/mirror/git-repos-from-kas.py <agl-ucb tree> | CACHE_DIR=/srv/agl-cache kit/mirror/git-mirrors.sh`. A consumer sets
-`AGL_GIT_MIRROR=1` with `AGL_MIRROR_URL`; the engine then exports `KAS_PREMIRRORS="^https?://([^/]+)/ $AGL_MIRROR_URL/git/\1/"` (kas
+`AGL_GIT_MIRROR=1` with `AGL_MIRROR_URL` (on a kit host: `GIT_MIRROR=1` next to `MIRROR_URL` in `kit/deploy.sh`, kept by `kit/update.sh`); the engine then exports `KAS_PREMIRRORS="^https?://([^/]+)/ $AGL_MIRROR_URL/git/\1/"` (kas
 rewrites the clone URL; the kas-container script forwards the variable). It is opt-in because kas has **no fallback**: tested with
 kas 5.5 in the builder image, a mirror that lacks the repository fails the checkout ("repository ... not found") instead of using the
 original URL, so enable it only where the mirror is complete, e.g. the T2 rebuild and the untrusted hosts. Also tested with real kas: a

@@ -5,7 +5,7 @@
 set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
-. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS DIND CACHE_DIR POOL MIRROR_URL
+. /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS DIND CACHE_DIR POOL MIRROR_URL GIT_MIRROR
 #                               HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS and the limits: MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER
 #                               MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR, the same four with the prefix LINT_ for the lint slots
 #                               (MEM_LIMIT / CPU_LIMIT / LINT_MEM_LIMIT / LINT_CPU_LIMIT of an older runner.env are still read)
@@ -34,6 +34,7 @@ if [ -n "${CACHE_DIR:-}" ]; then
   cache=(-v "$CACHE_DIR:$CACHE_DIR")
   cache_env=(-e AGL_SSTATE_DIR="$CACHE_DIR/sstate" -e AGL_DL_DIR="$CACHE_DIR/dl")
   [ -z "${MIRROR_URL:-}" ] || cache_env+=(-e AGL_MIRROR_URL="$MIRROR_URL")
+  [ -z "${MIRROR_URL:-}" ] || [ "${GIT_MIRROR:-}" != 1 ] || cache_env+=(-e AGL_GIT_MIRROR=1)   # kas clones the layers from MIRROR_URL/git/
 fi
 hs_env=()   # shared hash equivalence server: read-write for trusted hosts, read-only upstream for untrusted ones (deploy.sh checks)
 [ -z "${HASHSERV_RW:-}" ] || hs_env+=(-e AGL_HASHSERV_RW="$HASHSERV_RW")
