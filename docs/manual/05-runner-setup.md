@@ -221,6 +221,7 @@ Untrusted host:
 2. Check (below). Fork pull requests start to build once the callers pin a `layer-ci.yml` that routes (chapter 13).
 
 ### Check after any setup
+- Both address families: `ss -ltn | grep '\[::\]'` (what listens on IPv6), `ip -6 addr show scope global` (is there a global address), `ufw status` (the `(v6)` lines). A port that must stay closed is closed on IPv6 too (chapter 18, "IPv6").
 - `systemctl is-active 'agl-runner@*'` prints `active` per slot; `sudo grep -v TOKEN /etc/agl-runner/runner.env` shows the
   expected `POOL`, `LABELS`, `CACHE_DIR`.
 - Org Settings > Actions > Runners: one idle runner per slot, labels `self-hosted Linux X64` plus the pool label.

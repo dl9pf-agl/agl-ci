@@ -32,6 +32,23 @@ Ufw does not see ports that Docker publishes. The walls are therefore the bind a
 `DOCKER-USER` rule, not ufw rules for those ports. Check from outside: the read-write port must time out on the public address and open through the
 tunnel (`timeout 3 bash -c '</dev/tcp/<address>/9393'`).
 
+### IPv6 (second path, check it with every wall)
+Every wall above has an IPv4 and an IPv6 side, and the walls of the published ports are IPv4 rules (`DOCKER-USER`, `hosts allow`, bind address). State on 2026-11-18, measured:
+
+| Host | Global IPv6 address | Listening on `[::]` | ufw IPv6 | `ip6tables` INPUT |
+|---|---|---|---|---|
+| Builder | yes (not recorded here) | only SSH; the rsync daemon is bound to one IPv4 tunnel address, so it has no IPv6 listener | `IPV6=yes`, two `(v6)` rules (not looked at) | policy `DROP` |
+| Mirror host | **no** (link-local only) | SSH, 8080, 9191, 9292, 9393, 9494 (Docker publishes both families) | `IPV6=yes`, allows 22, 80 and 8080 | policy `DROP` |
+| Fork host | no (link-local only) | only SSH | `IPV6=yes`, six `(v6)` rules (not looked at) | policy `DROP` |
+
+So nothing sensitive is reachable over IPv6 today: the one host that publishes the hash server ports has no global address, and even with one the default policy would drop 9191 and 9393
+*(inference from the rules, not tested; there is no address to test against)*. The builder has a global address but listens there only with SSH.
+Rules that stay true for every host and every new service:
+1. A new published port is checked for both families: `ss -ltn | grep '\[::\]'`, `ip -6 addr show scope global`, `grep ^IPV6 /etc/default/ufw`, `ufw status` (the `(v6)` lines), `ip6tables -S INPUT`.
+2. A port that must not be public is not published on all addresses: bind it to one IPv4 address (`RSYNCD_BIND`, `RW_BIND`), as the rsync daemon is. A bind address needs no firewall twin.
+3. The read-write hash ports (9191, 9393) over IPv6: test from outside once a global address exists; expected result: timeout. A link-local `fe80::` address is not a test target (it needs a zone and is not routed).
+4. When Docker's `ip6tables` is enabled, the `DOCKER-USER` rule needs a twin in `/etc/ufw/after6.rules` *(not checked on our hosts, untested)*.
+
 ## Moving the trusted runner to another host
 Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this order, one step at a time; every step has a check before the next.
 1. **Bare host:** Debian 13, a user for the runners, the disk for `CACHE_DIR`, SSH keys. Nothing else.
@@ -51,8 +68,9 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
 2. Step 5 per node: each builder needs its own read-only rsync daemon and an entry in the pull cron of the mirror host, or a node's objects reach no other node.
 3. Until the pull is prompt (5 minutes today), stage 2 of a pipeline that runs on another node starts cold; this is the reason the mirror hand-off must be fast
    before the fleet grows (see "Open").
-4. Check `systemctl is-active 'agl-runner@*'`, the runners in the org (one per slot, labels `self-hosted Linux X64 agl-pr`), one gate.
-5. Write down the node in your inventory (the manual does not list addresses).
+4. Block the SCTP module (below, "Host CVE watch"), on every host.
+5. Check `systemctl is-active 'agl-runner@*'`, the runners in the org (one per slot, labels `self-hosted Linux X64 agl-pr`), one gate.
+6. Write down the node in your inventory (the manual does not list addresses).
 
 ## Debugging a host
 | Symptom | Look at | Likely cause |
@@ -108,10 +126,49 @@ GB-hours of Actions storage; the net cost is 0 for both, because public reposito
 nightly retention 30 days). Since 2026-11-18 the build job uploads no artifact (chapter 13, "Build artifacts are off"). **If a repository becomes private** the free plan
 gives 500 MB of storage and 2,000 hosted minutes a month *(GitHub's published limits, not looked up in the account)*, and October (2,337 minutes, billing) already exceeded the minutes: before that, shorten the `images` workflow runs and keep artifacts off.
 
+## Host CVE watch
+The images are scanned (chapter 09: builder and runner image). The **hosts** are not: kernel, Docker stack and the mirror's web server need their own watch. The mirror and the
+hash server images are not mentioned in chapter 09, so treat them as unscanned *(inference from the chapter)*. Check weekly and whenever a disclosure like the one below appears.
+
+| Component | Where | State on 2026-11-18 | How to look |
+|---|---|---|---|
+| Linux kernel | all three hosts | 6.12.117 on all three hosts since 2026-11-18 (was 6.12.113 on the mirror and fork host, 6.12.115 on the builder) | `uname -r`; `apt list --upgradable 2>/dev/null \| grep linux-image` |
+| SCTP module | all three hosts | not loaded; blocked on all three hosts since 2026-11-18 (`install sctp /bin/false`, see "SCTP block" below) | `lsmod \| grep sctp`; `modprobe -n -v sctp` prints `install /bin/false` |
+| nginx | container `agl-mirror` on the mirror host | 1.30.6, image pinned by digest in `kit/mirror/run.sh`; nginx.org lists 1.30.7 and 1.31.9 as fixed | `docker exec agl-mirror nginx -v`; <https://nginx.org/en/security_advisories.html> |
+| docker.io, containerd, runc | builder, fork host | Debian trixie packages: docker 26.1.5, containerd 1.7.24, runc 1.1.15 | `docker version`; `docker info \| grep -i -E 'containerd\|runc'`; Debian security tracker (source packages `runc`, `docker.io`, `containerd`) |
+
+**Updating a host** (done 2026-11-18, one host at a time, with no job running: the fork host first, the builder, the mirror host last because it carries the hash server): `apt-get -y full-upgrade`, then `systemctl reboot`.
+Use `full-upgrade`, not `upgrade`: a kernel update brings a new package (`linux-image-6.12.117…`), which `apt-get upgrade` never installs, so the host rebooted into the old kernel. After a reboot check
+`uname -r`, `systemctl is-active 'agl-runner@*'` and `docker ps`; the slots register again after one to three minutes and leave their old registrations offline (delete them, "Debugging a host").
+Before a reboot check that every container has a restart policy (`docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' <name>`): the mirror, the hash server and `agl-rsyncd` have `unless-stopped`.
+`unattended-upgrades` is installed and enabled on the mirror and the fork host, but its log file does not exist and a security update of 7 Nov (zlib) was still waiting on 18 Nov, so it has apparently never installed
+anything there *(inference; the reason was not looked up)*; the builder does not have it. Until that is clarified, update by hand weekly.
+
+IPv6 on the mirror host: the published ports listen on `[::]` as well, and the `DOCKER-USER` rule is IPv4 only. The public interface has an IPv4 address and only a link-local IPv6 address (`ip addr`, 2026-11-18), so the host cannot be reached over IPv6 from outside its segment
+(measured). If a global address is ever added: ufw's IPv6 side allows only 22, 80 and 8080 and `ip6tables` has `INPUT DROP`, so 9191/9393 should stay closed *(inference from the rules, not tested)*; test it then.
+
+Known open items on that date: the Debian tracker lists runc 1.1.15 in trixie as vulnerable without a fix (CVE-2025-31133, -52565, -52881, CVE-2026-41579) and two open docker.io
+CVEs (CVE-2026-92542, -92543). The jobs run in the Docker daemon of a privileged sidecar, so a job already has far-reaching rights on its host; whether the host runc is the deciding
+weakness was not tested *(inference)*.
+
+**SCTP block** (`install sctp /bin/false`): no job needs SCTP, and the kernel bugs of the SCTP stack (send path, CVE-2026-46227; ASCONF "SCTPhantom", CVE-2026-64564, third-party
+sources, not checked against kernel.org) can be reached by any process that opens an SCTP socket, which loads the module. On each host, as root:
+```
+echo 'install sctp /bin/false' > /etc/modprobe.d/disable-sctp.conf
+modprobe -n -v sctp        # must print: install /bin/false
+```
+It changes nothing for a running system (the module is not loaded) and nothing for CI.
+
+**Case, 2026-11-18: "nginx2root"** (CVE-2026-123007, HTTP/2 flow control, nginx 1.9.5 to 1.31.8; fixed in 1.31.9 and 1.30.7). Procedure that was followed, for the next one: (1) read the
+advisory on nginx.org, not only the blog; (2) does our configuration enable the precondition? The mirror has no `http2`, no HTTP/3, no proxy, mail or stream module, no `alias`, `try_files`
+or `rewrite`, and the TLS port is off, so the paths of the article do not apply; (3) which version runs (1.30.6, vulnerable code); (4) patch when the fixed image exists: new digest in `kit/mirror/run.sh`, recreate the container.
+
 ## Open
 - The 10 Gbit network, the names and the move of the tunnel onto it.
 - A prompt hand-off between nodes (pull every 5 minutes today) and the staging per machine ("way B": a canary image first, then the rest of that machine) before more than one builder runs.
 - Identify the 165 unstable tasks of `agl-image-minimal` on raspberrypi5.
 - A cold event on several nodes, measured.
+- Move the mirror image to nginx 1.30.7 or later (the kernels are updated since 2026-11-18).
+- IPv6: test the read-write hash ports from outside once the mirror host gets a global address; consider binding 9191 and 9393 to the tunnel address instead of every address.
 - Backups of the hash server database, pruning, log rotation of `/var/log/agl-pull-sync.log` and `/var/log/agl-git-mirrors.log`.
 - A fix for cancelling a run (a different approach than a `cancelled()` step, chapter 13).

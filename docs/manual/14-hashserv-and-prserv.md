@@ -115,7 +115,14 @@ ss -ltn | grep -E ':(9191|9292|9393|9494) '
      COMMIT
      ```
      Repeat step 3 after `ufw reload` and after the next reboot. (Seen on the trusted test host: the rule was still listed after
-     `ufw reload`. A reboot has not been checked yet.)
+     `ufw reload`, and after a reboot on 2026-11-18.)
+     **IPv6 is a second path and the rule above does not cover it.** Docker publishes the ports on `[::]` as well (`ss -ltn | grep '\[::\]'` lists
+     `[::]:9393`), and `iptables` rules apply to IPv4 only. What keeps the read-write ports closed over IPv6 is, on the host of 2026-11-18, that it has no global
+     IPv6 address (only link-local), plus ufw with `IPV6=yes` in `/etc/default/ufw` (`ip6tables -S INPUT` shows policy `DROP`, and `ufw status` lists
+     only 22, 80 and 8080 as `(v6)`). Before a host with a global IPv6 address publishes these ports: check those three things again, test 9393 from
+     outside over IPv6 (it must time out), and prefer to publish the read-write ports on one IPv4 address only (`RW_BIND`, an address and not
+     empty). Whether Docker's own IPv6 filtering (`ip6tables` in `daemon.json`) is on was not checked; if it is, a twin of the rule above belongs into
+     `/etc/ufw/after6.rules` *(untested)*. Details and the state of every host: chapter 18, "IPv6".
   5. Let the job containers in. They reach the server through the host's own address, which Docker does not translate for them, so the
      packet lands on the host and ufw (default deny incoming) drops it silently. Only the outside is exempt, because Docker forwards
      it past ufw. Allow the address pools that the per-job networks come from, and nothing wider, for the ports the builds use.
