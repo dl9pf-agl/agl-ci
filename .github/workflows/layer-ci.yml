@@ -203,16 +203,18 @@ jobs:
           TARGET: ${{ matrix.target }}
           SDK_ALLOWED: ${{ needs.matrix.outputs.tier == 'release' && 'true' || 'false' }}
         run: agl-ci/ci/scripts/build.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --sdk-allowed "$SDK_ALLOWED"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: ${{ matrix.repo }}-${{ matrix.machine }}-${{ matrix.target }}
-          path: |
-            tree/build/artifacts/**
-            tree/build/validate-results/**
-            tree/build/drill-results/**
-            tree/build/fetch-results/**
-          retention-days: ${{ needs.matrix.outputs.tier == 'push-pr' && 7 || needs.matrix.outputs.tier == 'nightly' && 30 || 90 }}
+      # Artifact upload is OFF (2026-11-18): images and result directories cost about 230 GB of Actions storage in 18 days. build.sh does not
+      # copy the images any more either. To revive, remove the '# ' prefix of this step and of the copy in ci/scripts/build.sh (chapter 13).
+      # - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      #   if: always()
+      #   with:
+      #     name: ${{ matrix.repo }}-${{ matrix.machine }}-${{ matrix.target }}
+      #     path: |
+      #       tree/build/artifacts/**
+      #       tree/build/validate-results/**
+      #       tree/build/drill-results/**
+      #       tree/build/fetch-results/**
+      #     retention-days: ${{ needs.matrix.outputs.tier == 'push-pr' && 7 || needs.matrix.outputs.tier == 'nightly' && 7 || 90 }}
 
   # yocto-check-layer runs against a bare oe-core config, not against the image, so it does not depend on a matrix entry: one run
   # per workflow run, next to the build jobs, instead of once per image inside each of them (about 13 minutes each).

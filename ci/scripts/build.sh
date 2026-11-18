@@ -26,9 +26,35 @@ if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   kas_run shell "$KASFILES" -c "bitbake -c populate_sdk $TARGET"
 fi
 
-ARTIFACT_DIR="${ARTIFACT_DIR:-$TREE/build/artifacts/$MACHINE-$TARGET}"
-mkdir -p "$ARTIFACT_DIR"
-DEPLOY_DIR="$TREE/build/tmp/deploy"
-[ -d "$DEPLOY_DIR/images/$MACHINE" ] && cp -a "$DEPLOY_DIR/images/$MACHINE/." "$ARTIFACT_DIR/" || true
-[ -d "$DEPLOY_DIR/sdk" ] && cp -a "$DEPLOY_DIR/sdk/." "$ARTIFACT_DIR/sdk/" || true
-echo "build.sh: artifacts in $ARTIFACT_DIR"
+# --- Collecting the build output for the artifact upload: OFF (2026-11-18) ---------------------------------------------------------
+# Why off: the images made about 232 GB of Actions storage in 18 days (chapter 13, "Build artifacts are off"). The upload step in
+# .github/workflows/layer-ci.yml is off too; the two belong together. To revive both, remove the '# ' prefix of the lines below
+# and of that step (the step also names the retention: 7 days for pull requests and nightlies).
+#
+# What the lines do, variable by variable:
+#   TREE          the agl-ucb checkout of the job (AGL_TREE, set by the workflow); bitbake's build directory is $TREE/build.
+#   MACHINE, TARGET   the matrix entry being built (--machine, and the image name from the matrix); they only name the directory.
+#   ARTIFACT_DIR  where the output is collected, default $TREE/build/artifacts/$MACHINE-$TARGET. The upload step picks up
+#                 tree/build/artifacts/**, so the directory has to be below build/artifacts. Set ARTIFACT_DIR in the environment to
+#                 collect somewhere else (a local run); the upload then finds nothing.
+#   DEPLOY_DIR    bitbake's deploy output, $TREE/build/tmp/deploy (DEPLOY_DIR of the kas build: TMPDIR is build/tmp).
+#   images/$MACHINE   the images of the machine: wic and rootfs files, kernel, device trees, manifests. This is the large part
+#                 (Flutter and Qt demo images are about 2 GB each).
+#   sdk           only exists when the populate_sdk step above ran, i.e. for a matrix entry with sdk set on a release
+#                 (SDK_ALLOWED=true). Copied into $ARTIFACT_DIR/sdk/.
+#   '|| true'     a missing directory (no images, no SDK) is not an error; a failing copy does not fail the build job either.
+#   cp -a         copies with modes and timestamps and keeps symlinks as symlinks (the deploy directory is full of them).
+#
+# Example, a gate of meta-agl: MACHINE=qemux86-64, TARGET=agl-image-minimal, AGL_TREE=/home/runner/work/meta-agl/meta-agl/tree
+#   copies  /home/runner/work/meta-agl/meta-agl/tree/build/tmp/deploy/images/qemux86-64/.
+#   into    /home/runner/work/meta-agl/meta-agl/tree/build/artifacts/qemux86-64-agl-image-minimal/
+#   and the upload step publishes that directory as the workflow artifact 'meta-agl-qemux86-64-agl-image-minimal'. With
+#   SDK_ALLOWED=true and a populated SDK, tmp/deploy/sdk/. lands in .../qemux86-64-agl-image-minimal/sdk/ as well.
+#   (The file names inside depend on IMAGE_FSTYPES of the image, e.g. a .wic file and the kernel; they are not listed here.)
+#
+# ARTIFACT_DIR="${ARTIFACT_DIR:-$TREE/build/artifacts/$MACHINE-$TARGET}"
+# mkdir -p "$ARTIFACT_DIR"
+# DEPLOY_DIR="$TREE/build/tmp/deploy"
+# [ -d "$DEPLOY_DIR/images/$MACHINE" ] && cp -a "$DEPLOY_DIR/images/$MACHINE/." "$ARTIFACT_DIR/" || true
+# [ -d "$DEPLOY_DIR/sdk" ] && cp -a "$DEPLOY_DIR/sdk/." "$ARTIFACT_DIR/sdk/" || true
+# echo "build.sh: artifacts in $ARTIFACT_DIR"

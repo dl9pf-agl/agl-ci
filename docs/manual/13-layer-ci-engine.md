@@ -92,6 +92,15 @@ image, which contains kas and the Yocto host tools). Everything goes through `ka
 
 `mode` input: `build` (default) or `drill` (chapter 15); `pull_request` always runs `build`.
 
+## Build artifacts are off
+Since 2026-11-18 the `build` job uploads no workflow artifact: the `upload-artifact` step in `layer-ci.yml` is commented out, and
+`ci/scripts/build.sh` no longer copies `tmp/deploy/images` (and `sdk`) into `build/artifacts`. Reason: 232 GB of images and logs
+(Flutter and Qt demo images about 2 GB each) in 18 days on a plan with a storage allowance only for public repositories. The
+images stay in the sstate and in the build directory of the runner; the validate and fetch results (`validate-results`,
+`fetch-results`) are no longer attached to the run either, so a failed fetch shows only the last three lines of its log in the
+job log. To revive: remove the `# ` prefix of the step and of the copy in `build.sh` (both carry a note), and set the nightly
+`retention-days` to 7 days (done in the commented step).
+
 ## Trust rules
 ### Tier and pool
 The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
