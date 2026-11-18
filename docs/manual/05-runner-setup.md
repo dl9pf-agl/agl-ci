@@ -204,7 +204,8 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Host roles
 | Role | Pool | Label | Runs |
 |---|---|---|---|
-| Trusted build host (today's host) | `trusted` | `agl-pr` | same-repo pull requests, nightly, push, release; owns the cache that is the mirror; also runs the mirror web server and, later, the hashserv container (chapter 14) |
+| Trusted build host | `trusted` | `agl-pr` | same-repo pull requests, nightly, push, release; owns the build cache and offers it read-only (rsync) to the mirror host |
+| Mirror host (no runner) | none | none | mirror web server, hash server (chapter 14), rsync pull from the builder, git mirror refresh; since 2026-11-16 a separate machine from the builder (chapter 18) |
 | Untrusted build host (second machine) | `untrusted` | `agl-fork` | pull requests from forks only; private cache; reads the mirror over the network |
 They are different physical machines. Never put both roles on one host.
 
