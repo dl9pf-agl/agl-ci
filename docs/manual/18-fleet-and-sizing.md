@@ -14,7 +14,7 @@ How to read the numbers: unmarked figures are **measured** on our hosts (date gi
 |---|---|---|---|
 | Builder (Hetzner AX102 class, Debian 13, 32 threads, 125 GB RAM, one 1.7 TB disk) | `trusted`: `agl-pr` slots 1 and 2, `agl-lint` slot 3 | Builds and checks of pull requests from the same repo, nightly, push, release; owns the build cache `/srv/agl-cache` and offers it read-only to the mirror host | Mirror web server, hash server |
 | Mirror host (the former trusted host, Debian 13) | none | nginx container `agl-mirror` on port 8080 (`/dl`, `/sstate`, `/git`), hash server container (ports 9191/9393 read-write, 9292/9494 read-only), rsync pull from the builder, git mirror refresh | Any runner |
-| Fork host (Debian 10, older machine) | `untrusted`: `agl-fork`, `agl-fork-lint` | Pull requests from forks only; private cache; reads the public mirror and the read-only hash server (9494) | Anything with write access to the shared cache |
+| Fork host (Debian 13; its provider image name still says buster) | `untrusted`: `agl-fork`, `agl-fork-lint` | Pull requests from forks only; private cache; reads the public mirror and the read-only hash server (9494) | Anything with write access to the shared cache |
 
 Slot limits on the builder: runner container 24 GB, Docker sidecar `MEM_LIMIT_SIDECAR=55g`, lint sidecar 2 GB (chapter 05, "Limits of a slot").
 The host that runs trusted jobs and the host that runs fork code are different machines; never merge the roles (chapter 05, "Host roles").
