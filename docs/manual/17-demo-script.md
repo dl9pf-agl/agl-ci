@@ -28,7 +28,7 @@ shows the build on a runner with the labels `self-hosted,agl-fork`. In its log t
 *Not shown yet:* a pull request from an outside contributor's account (the "Approve and run" gate); see scene 7.
 
 ## Scene 3: reading a red run (7 minutes)
-*Say:* a red run says where to look; the log of the failing task is usually in the job log, the full bitbake output of fetch runs is in the uploaded artifact.
+*Say:* a red run says where to look; the log of the failing task is usually in the job log, the full bitbake output of fetch runs is no longer uploaded (build artifacts are off, chapter 13); the job log keeps its last lines.
 *Show:* the KVM demo on `qemux86-64` that failed after 5 h 34 min (meta-agl-demo run 41678903588). `gh run view <id> -R <repo> --json jobs -q '.jobs[]|select(.conclusion=="failure")|.name'`,
 then the annotation (`gh api repos/<repo>/check-runs/<job id>/annotations --jq '.[].message'`) and the first `ERROR:` line of the job log:
 `install: cannot stat '.../agl-ivi-demo-flutter-guest-qemux86-64.ext4'`. Then the finding behind it: chapter 13, "Pitfalls found in the layers".
