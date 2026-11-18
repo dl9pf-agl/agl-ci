@@ -31,4 +31,6 @@ chk https://code.qt.io/yocto/meta-qt6 http://m:8080/git/code.qt.io/yocto/meta-qt
 chk https://github.com/dl9pf-agl/meta-agl-demo.git http://m:8080/git/github.com/dl9pf-agl/meta-agl-demo.git
 chk https://github.com/o/r.git https://github.com/o/r.git   # the repo under test stays where it is
 chk https://example.org/x/y https://example.org/x/y   # a host that is not mirrored is cloned from its origin
+# fetch.sh keeps the layer rewrite (and only that) while it unsets the source and sstate mirror
+grep -q 'KAS_PREMIRRORS="$(agl_premirrors)"' "$(dirname "$f")/fetch.sh" && ok "fetch.sh sets the layer premirrors" || bad "fetch.sh does not set the layer premirrors"
 exit "$fail"
