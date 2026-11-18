@@ -118,7 +118,10 @@ The nightly of `meta-agl` runs it as the scheduled job `fetch` next to the build
 with their caller, M18). When the source mirror is wired in (M4), the fill job must set `PREMIRRORS = ""`, like the
 Yocto autobuilder fragment `fragments/yocto-autobuilder/autobuilder.conf` (it sets `BB_GENERATE_MIRROR_TARBALLS = '1'` and
 `PREMIRRORS = ''`): the fill reads from the real upstream, never from our own mirror, so that a stale mirror cannot hide
-an upstream change. Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
+an upstream change. One exception: the layer clones of kas (not the sources) come from the host's git mirror when the host
+has `GIT_MIRROR=1`, because the 13 parallel clones of a nightly were dropped by git.yoctoproject.org and throttled by GitHub
+(18 Nov 2026: 8 of 13 fetch jobs failed with `early EOF`). The mirror is at most 30 minutes old; a layer revision newer than that
+fails the clone and the next nightly passes. Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
 more.
 
 ### Mirror design (decided 2026-10-26)

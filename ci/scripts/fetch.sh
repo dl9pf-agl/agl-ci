@@ -12,7 +12,14 @@ cd "$TREE" || exit 1
 parse_common_args "$@"
 
 # The fill reads from the real upstreams, never from a mirror (a stale mirror must not hide an upstream change, chapter 15).
-unset AGL_MIRROR_URL AGL_GIT_MIRROR KAS_PREMIRRORS AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM   # the fill must not write equivalences either
+# The one exception are the layer clones of kas: with AGL_GIT_MIRROR the host's git mirror (refreshed every 30 minutes from the
+# upstreams, chapter 15) serves them, since git.yoctoproject.org and GitHub drop or throttle the 13 parallel clones of a nightly.
+# A layer revision newer than the mirror makes the clone fail visibly and the next nightly passes.
+unset KAS_PREMIRRORS
+if [ -n "${AGL_GIT_MIRROR:-}" ] && [ -n "${AGL_MIRROR_URL:-}" ]; then
+  AGL_MIRROR_URL="${AGL_MIRROR_URL%/}"; KAS_PREMIRRORS="$(agl_premirrors)" || exit 1; export KAS_PREMIRRORS
+fi
+unset AGL_MIRROR_URL AGL_GIT_MIRROR AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM   # the fill must not write equivalences either
 
 matrix_fields kasfiles,target
 KASFILES="${_MATRIX_FIELDS[0]}$(kas_extra_includes)$(kas_ci_includes):build/ci-kas/ci-mirror.yml"
