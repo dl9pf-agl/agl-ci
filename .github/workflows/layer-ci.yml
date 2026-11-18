@@ -148,6 +148,7 @@ jobs:
     permissions: { contents: read }
     strategy:
       fail-fast: false
+      max-parallel: ${{ needs.matrix.outputs.mode == 'fetch' && 3 || 256 }}   # the fill clones from GitHub and others: three at a time, builds are not capped
       matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
     env:
       CI: "true"
