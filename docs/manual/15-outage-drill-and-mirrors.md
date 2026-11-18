@@ -121,7 +121,9 @@ Yocto autobuilder fragment `fragments/yocto-autobuilder/autobuilder.conf` (it se
 an upstream change. One exception: the layer clones of kas (not the sources) come from the host's git mirror when the host
 has `GIT_MIRROR=1`, because the 13 parallel clones of a nightly were dropped by git.yoctoproject.org and throttled by GitHub
 (18 Nov 2026: 8 of 13 fetch jobs failed with `early EOF`). The mirror is at most 30 minutes old; a layer revision newer than that
-fails the clone and the next nightly passes. Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
+fails the clone and the next nightly passes. Against the rest of the throttling (the sources still come from the upstreams) a
+fill job tries once more after 60 seconds (`FETCH_RETRY_WAIT`; the log shows `---- retry ----`), and the fetch pass runs at most
+three jobs at the same time (`max-parallel` in `layer-ci.yml`; builds are not capped). Other fetchers (npm, cargo, go, pip) are not covered by this switch; drill B shows which recipes need
 more.
 
 ### Mirror design (decided 2026-10-26)

@@ -34,9 +34,20 @@ echo "fetch.sh: fetch of $TARGET ($KASFILES)"
 # the first run. A mirror without it cannot rebuild anything on a new builder (chapter 15), so a fill that did not leave one behind
 # fails instead of staying green. The check runs in the same container as the fetch: the runner container cannot enter CACHE_DIR
 # (root:root 0700, kit/deploy.sh).
-kas_run shell "$KASFILES" -c "bitbake -k --runall=fetch $TARGET; rc=\$?
+fill() {
+  kas_run shell "$KASFILES" -c "bitbake -k --runall=fetch $TARGET; rc=\$?
   ls \"\${AGL_DL_DIR:-downloads}\"/uninative/*/*.tar.xz >/dev/null 2>&1 || { echo 'fetch.sh: ERROR: no uninative tarball in DL_DIR/uninative; the mirror would be incomplete' >&2; rc=1; }
-  exit \$rc" >"$LOG" 2>&1
+  exit \$rc"
+}
+fill >"$LOG" 2>&1
 rc=$?
+# GitHub and git.yoctoproject.org drop or throttle connections under load (2026-11-17, 2026-11-18: early EOF, HTTP 429). One more
+# try after a pause: DL_DIR keeps what the first try fetched, so the second only asks for what is still missing.
+if [ "$rc" -ne 0 ]; then
+  echo "fetch.sh: exit $rc, retrying once in ${FETCH_RETRY_WAIT:-60} s"
+  sleep "${FETCH_RETRY_WAIT:-60}"
+  { echo "fetch.sh: ---- retry ----"; fill; } >>"$LOG" 2>&1
+  rc=$?
+fi
 echo "fetch.sh: exit $rc, end of $LOG:"; tail -n 3 "$LOG"
 exit "$rc"
