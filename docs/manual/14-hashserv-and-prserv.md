@@ -67,6 +67,9 @@ Their own reports go to a database private to the run; known outputs still map t
 - A missing or unreachable hashserv is not fatal: bitbake warns ("Error contacting Hash Equivalence Server") and uses
   the task hash as unihash, so builds get slower, not red. An unreachable `BB_HASHSERVE_UPSTREAM` with `auto` is also
   a warning, and the upstream is dropped.
+- A hashserv that dies while builds run is worse than one that was never there: on 2026-11-16 the container of the trusted
+  host stopped with the host restart and two running builds sat idle for about 17 hours; they went on by themselves a
+  few minutes after the server was started again (observed, not analysed). Watch for builds that stop making progress.
 - `BB_HASHSERVE_DB_DIR` on NFS is fatal. The local `auto` server opens its sqlite file with `sync=False`; two bitbake
   servers on one file work on one host but are not the supported way to share. The trial still does this (the database
   sits in the shared sstate directory via `kas/local/sstate-shared.yml`); the supported way is the network server.
@@ -82,6 +85,9 @@ RW_BIND=<private address> RO_BIND=<build network address> ./build-and-run.sh
 docker ps --filter ancestor=prhashserv:production-wrynose-$(date +%F)
 ss -ltn | grep -E ':(9191|9292|9393|9494) '
 ```
+- The container must come back after a host restart: `docker update --restart unless-stopped <container>` (the container
+  of the trusted host had no restart policy, and the restart of the host switched the server off). The firewall rule below
+  survives a reboot (step 4); the container does not, unless it has this policy.
 - Data lives in the named volume `prhashserv-wrynose` (hashserv.db, prserv.db, logs). Back it up: stop the container
   (`docker stop`, a clean stop takes about a second), then `docker run --rm --network none -v
   prhashserv-wrynose:/v -v $PWD:/b debian:trixie-slim tar -C /v -czf /b/prhash-$(date +%F).tgz .`.
