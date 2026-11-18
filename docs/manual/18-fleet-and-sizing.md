@@ -141,8 +141,17 @@ hash server images are not mentioned in chapter 09, so treat them as unscanned *
 Use `full-upgrade`, not `upgrade`: a kernel update brings a new package (`linux-image-6.12.117…`), which `apt-get upgrade` never installs, so the host rebooted into the old kernel. After a reboot check
 `uname -r`, `systemctl is-active 'agl-runner@*'` and `docker ps`; the slots register again after one to three minutes and leave their old registrations offline (delete them, "Debugging a host").
 Before a reboot check that every container has a restart policy (`docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' <name>`): the mirror, the hash server and `agl-rsyncd` have `unless-stopped`.
-`unattended-upgrades` is installed and enabled on the mirror and the fork host, but its log file does not exist and a security update of 7 Nov (zlib) was still waiting on 18 Nov, so it has apparently never installed
-anything there *(inference; the reason was not looked up)*; the builder does not have it. Until that is clarified, update by hand weekly.
+**Automatic security updates** (switched on 2026-11-18 on all three hosts). Before that `unattended-upgrades` was installed on the mirror and the fork host but never active: there was no
+`/etc/apt/apt.conf.d/20auto-upgrades`, so the daily apt timer ran and did nothing, which is why the zlib update of 7 Nov waited 11 days; the builder did not have the package. Now, on every host:
+- `/etc/apt/apt.conf.d/20auto-upgrades`: package lists and unattended upgrade every day.
+- `/etc/apt/apt.conf.d/52agl-unattended`: only the `trixie-security` origin (a `#clear` of Debian's default list comes first, otherwise the stable point-release origin stays allowed), the packages
+  `docker.io`, `containerd` and `runc` blacklisted (their update restarts the Docker daemon and with it the running jobs) and `Automatic-Reboot "false"`.
+- Fork host only: `/etc/needrestart/conf.d/agl.conf` with `$nrconf{restart} = 'l';`, so that `needrestart` lists services that need a restart and does not restart them.
+Check: `apt-config dump | grep -E 'APT::Periodic::(Update|Unattended)|Unattended-Upgrade::(Origins-Pattern|Package-Blacklist|Automatic-Reboot)'` and
+`LC_ALL=C unattended-upgrade --dry-run -d 2>&1 | grep -E 'Allowed origins|blacklist'` (`LC_ALL=C`: the mirror host has a German locale); after the first run
+`/var/log/unattended-upgrades/unattended-upgrades.log` exists. **Still manual:** every reboot into a new kernel, and the Docker stack; check weekly (the commands above).
+The first automatic run is the daily apt timer in the early morning; it was not yet observed. Debian's default configuration also removes unused old kernels *(default setting from memory, not
+checked on our hosts)*.
 
 IPv6 on the mirror host: the published ports listen on `[::]` as well, and the `DOCKER-USER` rule is IPv4 only. The public interface has an IPv4 address and only a link-local IPv6 address (`ip addr`, 2026-11-18), so the host cannot be reached over IPv6 from outside its segment
 (measured). If a global address is ever added: ufw's IPv6 side allows only 22, 80 and 8080 and `ip6tables` has `INPUT DROP`, so 9191/9393 should stay closed *(inference from the rules, not tested)*; test it then.
