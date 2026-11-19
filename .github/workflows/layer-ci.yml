@@ -128,22 +128,25 @@ jobs:
             echo "::warning::the matrix of tier $tier is empty for $REPO: nothing will be built and the result is green"
           fi
 
-  # Fork PRs execute contributor code on the self-hosted runner: a maintainer approves via the
-  # environment `agl-ci-build` (required reviewers, configured per repo: scripts/github-settings.sh).
-  approve:
-    needs: matrix
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-    runs-on: ubuntu-24.04
-    permissions: {}
-    environment: agl-ci-build
-    steps:
-      - run: echo "approved"
+  # DISABLED (2026-11-19): second approval gate for fork PRs, via the environment `agl-ci-build` (required reviewers,
+  # configured per repo: scripts/github-settings.sh). GitHub's own gate (approval policy `all_external_contributors`: a
+  # maintainer clicks "Approve and run workflows") is enough for now and the two gates asked the same person twice.
+  # To enable it again: uncomment this job, put `approve` back into `needs:` of build, check-layer and result, and put
+  # `&& (needs.approve.result == 'success' || needs.approve.result == 'skipped')` back into the `if:` of build and check-layer.
+  # approve:
+  #   needs: matrix
+  #   if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+  #   runs-on: ubuntu-24.04
+  #   permissions: {}
+  #   environment: agl-ci-build
+  #   steps:
+  #     - run: echo "approved"
 
   build:
     name: build (${{ matrix.repo }}/${{ matrix.target }} on ${{ matrix.machine }})
-    needs: [matrix, approve]
+    needs: [matrix]
     # !cancelled(), not always(): a job with always() is never cancelled by GitHub (cancel lab 2026-11-19, manual chapter 13). Same for check-layer.
-    if: ${{ !cancelled() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' }}
+    if: ${{ !cancelled() && needs.matrix.result == 'success' && needs.matrix.outputs.count != '0' }}
     runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
     timeout-minutes: 2880   # 48 h: a cold build of a Qt or Flutter demo image needs about 22 h alone and more beside another cold build (10 h and 24 h were too short or too tight); a re-run resumes from the sstate
     permissions: { contents: read }
@@ -221,8 +224,8 @@ jobs:
   # yocto-check-layer runs against a bare oe-core config, not against the image, so it does not depend on a matrix entry: one run
   # per workflow run, next to the build jobs, instead of once per image inside each of them (about 13 minutes each).
   check-layer:
-    needs: [matrix, approve]
-    if: ${{ !cancelled() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' && needs.matrix.outputs.mode == 'build' }}
+    needs: [matrix]
+    if: ${{ !cancelled() && needs.matrix.result == 'success' && needs.matrix.outputs.count != '0' && needs.matrix.outputs.mode == 'build' }}
     runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
     timeout-minutes: 120
     permissions: { contents: read }
@@ -252,7 +255,7 @@ jobs:
 
   # The only required status check of a caller repo.
   result:
-    needs: [matrix, approve, build, check-layer]
+    needs: [matrix, build, check-layer]
     if: always()
     runs-on: ubuntu-24.04
     permissions: {}

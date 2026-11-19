@@ -15,7 +15,7 @@ plus their own `ci/build-matrix.yaml`. Bump the SHA after every agl-ci change (`
 ## Rules (user decisions)
 - KISS/ponytail, reproducible, templatable, portable to GitLab/Forgejo/desk. Keep `docs/manual` current in the same commit.
 - Layer checkout goes through kas, never a user-facing script. User flow: `git clone agl-ucb; scripts/aglsetup.sh -m qemux86-64`.
-- Only `pull_request`, never `pull_request_target`; no secrets in PR builds; fork PRs need approval (env `agl-ci-build`).
+- Only `pull_request`, never `pull_request_target`; no secrets in PR builds; fork PRs need approval (GitHub's "Approve and run workflows"; the `approve` job with env `agl-ci-build` is commented out in `layer-ci.yml`, see there to enable it).
 - Required check: `ci / result` (set on meta-agl; the ruleset of agl-ci requires `lint`; agl-ucb, meta-agl-demo and meta-agl-devel have no ruleset yet). Runner labels in use: `agl-pr` and `agl-fork`; `agl-kvm` is reserved; `agl-release` is only listed in `.github/actionlint.yaml`, no workflow or host uses it.
 - The user merges PRs. Never operate on the user's server; give commands.
 

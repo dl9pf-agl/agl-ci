@@ -9,7 +9,7 @@ Always read the state from GitHub; do not infer it. Repo-qualify PR numbers (agl
 
 ## Anatomy of a run
 `ci / matrix` (hosted runner, read-only token): checks out agl-ci at the pinned SHA and agl-ucb at the default branch **at run time**, runs `checkout.sh`, computes the matrix. Outputs: `count`, `matrix`, `pool`, `mode`, `tier`, `builder`. Job summary: "Resolved pins of this run" (from agl-ci#38 on).
-`ci / approve` (skipped unless fork PR) → `ci / build (<repo>/<target> on <machine>)` and, in parallel, `ci / check-layer` (once per run: yocto-check-layer, its log is the tool's output) on `[self-hosted, <pool>]` → `ci / result` (the only required check; waits for both).
+`ci / build (<repo>/<target> on <machine>)` and, in parallel, `ci / check-layer` (once per run: yocto-check-layer, its log is the tool's output) on `[self-hosted, <pool>]` → `ci / result` (the only required check; waits for both).
 
 ## Is green real?
 - **Vacuous green:** `matrix` ok but no `build` jobs / `count=0`. Cause seen: the tree was not at the commit under test (pin lost to an `overrides:` pin). Callers pinned to agl-ci `31d44b2` or older **lack** the "tree is at the commit under test" failure and the count warning; check the caller's `uses:` SHA.
@@ -38,7 +38,7 @@ In the log: `Sstate summary: Wanted W Local L Missed M ...` (M = tasks that real
 | `queued` for hours | no free runner of that label: slots busy with cold builds, or the host is in the gap after a job (see `agl-ci-hosts-and-pools`) | runner list above; wait ~30 min before calling it an outage |
 | `cancelled` after exactly 10 h | job limit; annotation "exceeded the maximum execution time of 10h0m0s". the 24 h limit comes with a caller pin on agl-ci ≥ the timeout PR, the 48 h limit with a pin on the commit that made it 2880 | annotations |
 | Scheduled run starts hours after its cron | GitHub delays `schedule` events (the 01:17 UTC nightly was created at 07:03) | `gh run list --event schedule` |
-| Fork PR waits | `agl-fork` host offline, or approval pending | runner list, `approve` job |
+| Fork PR waits | `agl-fork` host offline, or "Approve and run workflows" pending | runner list, run page |
 | `matrix` fails | matrix validation (`... is not allowed`) or checkout failed or tree not at pin | step log of `matrix` |
 | Cold build is slow | first build of an image: `agl-image-minimal` about 4h28, Qt/Flutter demos over 10 h; later builds resume from sstate | sstate in `CACHE_DIR` |
 | Build red, same on re-run | real failure: read the `build` step log, last bitbake error | log |
