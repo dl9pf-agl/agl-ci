@@ -117,7 +117,14 @@ fork's workflow file is the fork's own; it does not have to call our workflow an
 `runs-on`. Two things stand in the way: the approval policy `all_external_contributors` (a maintainer must approve the run and read the
 workflow change), and, from the runner image that carries it, the job-started hook of the trusted hosts, which refuses any pull request
 whose head repository is not the repository itself before a step runs (chapter 05, "Security notes").
-An `agl-fork` runner (untrusted host) is online; a fork pull request has not been run on it yet.
+**Tested with an outside contributor (2026-11-19, meta-agl#21 from an account that is not a member of the organisation):** the run was held with
+`action_required` and no job until a maintainer clicked "Approve and run workflows" (GitHub's gate, the approval policy above). Then `matrix` ran on
+a hosted runner, and `build` and `check-layer` asked for `self-hosted,agl-fork` and ran on the untrusted host only, never on `agl-pr`. The build log
+names only `kas/local/hashserv-upstream.yml` (the read-only hash server), no `hashserv-rw.yml`. The warm gate (`agl-image-minimal` on qemux86-64)
+ended `success` in 11 minutes (sstate 99% match), `check-layer` in 15. A second gate, the job `approve` with the environment `agl-ci-build`
+(required reviewers), waited as designed, but it asked the same maintainer twice; it is commented out in `layer-ci.yml` since agl-ci#76, with the
+steps to enable it again. **Note for contributors:** the web page of a fork opens the pull request against the fork itself by default; the base
+repository must be set to the upstream repository.
 
 ### The matrix file is untrusted input
 The `ci/build-matrix.yaml` of a pull request is untrusted input (a fork can change `ci/build-matrix.yaml`). It cannot choose the pool,
