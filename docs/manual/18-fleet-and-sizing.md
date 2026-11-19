@@ -80,6 +80,32 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
 | Offline runners accumulate in the org | `gh api orgs/<org>/actions/runners` | Three offline registrations were found on 2026-11-18, one per slot; a slot restart leaves one *(inference from that count)*; delete the offline ones whose slot has an online replacement |
 | Fetch jobs fail with `early EOF` or 429 | Job log of the fetch pass | Upstream drops or throttles parallel clones; since agl-ci#65 and agl-ci#66 the layers come from the git mirror, the fill retries once and at most three jobs run at the same time. One fetch pass ran green with that (13 of 13, 2026-11-18); it was mostly cache hits, so it did not test the throttle *(not yet shown)* |
 | Hosts cannot reach the mirror | `curl -s -o /dev/null -w '%{http_code}\n' http://<mirror>:8080/dl/` (403 is right), `docker logs --since 20m agl-mirror` | Tunnel down, container stopped |
+| The disk of a runner host fills up, `docker system df` shows hundreds of local volumes | `docker volume ls -qf dangling=true \| wc -l`, `docker system df` | The `docker:dind` sidecar leaves an anonymous 1.3 GB volume per job when its container is removed with `rm -f`; fixed in agl-ci#71, see "Housekeeping" below |
+
+## Housekeeping
+
+### Dangling Docker volumes (found 2026-11-19)
+- **Observed:** the sidecar image `docker:dind` declares `VOLUME /var/lib/docker`. `kit/run-loop.sh` removed the job containers with `rm -f`, which keeps their anonymous volumes. On 2026-11-19 the builder had 391 dangling volumes (487.5 GB, about 1.3 GB each), the old trusted host 274 (about 280 GB) and the fork host 22. All were removed by hand; the disk use of the builder went from 621 GB to 150 GB.
+- **Fix:** agl-ci#71 changes the cleanup to `rm -fv`. *(Projection: no new dangling volumes after it is installed. Not yet confirmed; check the count a day later.)*
+- **Check (every host with a slot):** `docker volume ls -qf dangling=true | wc -l` stays near 0, `docker system df` shows the local volumes small.
+- **Clean up:** `docker volume ls -qf dangling=true | xargs -r -n 20 docker volume rm`. Docker refuses a volume that a container uses. The named volumes (`agl-w<slot>` of a running slot, `prhashserv-wrynose` of the hash server) are not dangling while in use, so leave `docker volume prune -a` alone.
+- **Images:** an image that a host uses by digest (`RUNNER_IMAGE=...@sha256:...`) shows as dangling (`<none>`), and so did an image that a running container used (the fork host refused to remove it: "image is being used by running container"). Remove an image only by its ID and read the `in use` refusal as the right answer, never prune images blindly.
+
+### Updating the run loop without killing jobs
+`kit/update.sh` redeploys and restarts every slot, which kills the jobs that run. For a change in `kit/run-loop.sh` only (agl-ci#71 was installed this way on 2026-11-19):
+1. Check that no slot is busy: `gh api orgs/<org>/actions/runners --paginate -q '.runners[] | select(.busy) | .name'` prints nothing.
+2. On the host: `cd <kit checkout> && git pull --ff-only && install -m 0755 kit/run-loop.sh /opt/agl-runner/run-loop.sh`. A running loop keeps its old copy; `install` replaces the file.
+3. `systemctl restart agl-runner@N` for each idle slot. The runner container of an idle slot is only waiting; the restart leaves one offline registration per slot (delete it, "Debugging a host"). The new registrations appeared within about a minute on both hosts *(observation, one time)*.
+
+### Automatic security updates
+Verified on 2026-11-19 on the builder, the fork host and the old host: the origin is `trixie-security` only, the blacklist is `docker.io containerd runc`, `Automatic-Reboot` is `false`, and the first runs found no package to install (`unattended-upgrades-dpkg.log` empty). Check with `ls -la /var/log/unattended-upgrades/`, `systemctl list-timers 'apt-daily*'` and `apt-config dump | grep -i Unattended-Upgrade::`.
+
+### Why did a build miss the cache?
+The `Sstate summary: Wanted W Local L Mirrors M Missed X` line of the job log counts the tasks that run. To find out what a miss is on a spare host (the fork host when idle), without building:
+1. Run `bitbake -n <target>` (dry run: lists the tasks that would run, downloads nothing) or `bitbake -S none <target>` (writes the signature files under `build/tmp/stamps`) in the runner image with the kas files of the matrix entry. Run as the runner user (`--user 1001:1001`): bitbake refuses root.
+2. Pass the read-only hash server (`AGL_HASHSERV_UPSTREAM`, from `runner.env`). **Observed 2026-11-19:** without it 100 of 610 tasks of `hdparm` and the kernel looked missed, with it 1 did. Judging a cache without the server gives a wrong picture.
+3. A cached object is named after the equivalence hash, a signature file of `bitbake -S none` after the task hash, so the two names do not match even for a hit. Compare the contents with `bb.siggen.compare_sigfiles` of a bitbake 2.18 checkout (`bitbake-diffsigs` starts a full bitbake environment even for two files and fails without one).
+4. **Case 2026-11-13:** the warm run of `agl-image-minimal` on raspberrypi5 missed 165 of 3267 tasks (kernel, `u-boot`, `perf`, `connman`, `ofono`, `bluez5`, `hdparm`). On 2026-11-19 the same image missed 6 on the fork host and 6 in CI, with and without `BAD_RECOMMENDATIONS += "hdparm"` (which does not remove the build of `hdparm` anyway: it only filters what is installed). The cause is unknown. *(Inference: the warm run itself refilled the cache. Not shown.)* Two things were measured that point at a source of unstable hashes without proving one: most native recipes have 2 to 4 cached `populate_sysroot` hashes, and the kernel has three cached `configure` hashes. Six native recipes were compared: their hashes differ by the multiconfig (`agl-kvm-guest`, `agl-xen-domu`) that built them.
 
 ## How many machines? (measured 2026-11-13/14)
 The benchmark built 18 images on **one** builder with two slots: `agl-image-minimal` and `agl-image-compositor` on qemux86-64, qemuarm64, qemuriscv64,
@@ -175,7 +201,7 @@ or `rewrite`, and the TLS port is off, so the paths of the article do not apply;
 ## Open
 - The 10 Gbit network, the names and the move of the tunnel onto it.
 - A prompt hand-off between nodes (pull every 5 minutes today) and the staging per machine ("way B": a canary image first, then the rest of that machine) before more than one builder runs.
-- Identify the 165 unstable tasks of `agl-image-minimal` on raspberrypi5.
+- The 165 missed tasks of `agl-image-minimal` on raspberrypi5 (2026-11-13) did not come back on 2026-11-19; the cause is unknown ("Why did a build miss the cache?"). Compare two builds with the same inputs to find a native or kernel recipe whose output is not reproducible.
 - A cold event on several nodes, measured.
 - Move the mirror image to nginx 1.30.7 or later (the kernels are updated since 2026-11-18).
 - IPv6: test the read-write hash ports from outside once the mirror host gets a global address; consider binding 9191 and 9393 to the tunnel address instead of every address.
