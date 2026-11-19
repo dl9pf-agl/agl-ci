@@ -142,7 +142,8 @@ jobs:
   build:
     name: build (${{ matrix.repo }}/${{ matrix.target }} on ${{ matrix.machine }})
     needs: [matrix, approve]
-    if: always() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0'
+    # !cancelled(), not always(): a job with always() is never cancelled by GitHub (cancel lab 2026-11-19, manual chapter 13). Same for check-layer.
+    if: ${{ !cancelled() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' }}
     runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
     timeout-minutes: 2880   # 48 h: a cold build of a Qt or Flutter demo image needs about 22 h alone and more beside another cold build (10 h and 24 h were too short or too tight); a re-run resumes from the sstate
     permissions: { contents: read }
@@ -221,7 +222,7 @@ jobs:
   # per workflow run, next to the build jobs, instead of once per image inside each of them (about 13 minutes each).
   check-layer:
     needs: [matrix, approve]
-    if: always() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' && needs.matrix.outputs.mode == 'build'
+    if: ${{ !cancelled() && needs.matrix.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') && needs.matrix.outputs.count != '0' && needs.matrix.outputs.mode == 'build' }}
     runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
     timeout-minutes: 120
     permissions: { contents: read }

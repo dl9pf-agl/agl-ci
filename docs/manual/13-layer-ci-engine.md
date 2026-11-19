@@ -154,16 +154,13 @@ the KVM demo). A low value that repeats night after night, with the same `Missed
 architecture of the second configuration first. The live job log lags by up to an hour or two; the full log is complete when the job ends.
 
 ## Cancelling a run
-A normal cancel (`gh run cancel`, the Cancel button) **does not stop a running build on our runners.** Seen on 2026-10-27 (untrusted host) and
-measured twice on 2026-11-18 on the trusted builder (throw-away branch, run 44338698058 and 44340840569): after the cancel the `check-layer` job
-and the KVM demo build ran to their natural end, 2 minutes later, and finished `success`; only the run as a whole shows `cancelled`. A step
-`if: cancelled()` therefore never gets its turn, and the idea of killing the nested containers from such a step was dropped (nothing merged, the
-draft sits on the agl-ci branch `m43/cancelled-step`). The build runs in the Docker sidecar of the slot, a different container from the runner; why
-the cancel does not reach it is **not known** (candidates: bash defers a signal until its foreground child exits and bitbake answers SIGINT with
-"finish the running tasks"; the runner may not deliver it). What works: `gh api -X POST repos/<org>/<repo>/actions/runs/<id>/force-cancel`. The runner
-container exits, `run-loop.sh` removes the sidecar and the slot registers again about 25 minutes later (the stale offline registration is
-removed with `gh api -X DELETE orgs/<org>/actions/runners/<id>`). Do not cancel a build that you can let finish: a warm gate ends in minutes.
-Open: a different approach (TODO list), for example a watchdog on the host.
+A normal cancel (`gh run cancel`, the Cancel button) stops a job on our runners within about 20 seconds, **unless the `if:` of the job uses `always()`.** GitHub does not cancel such a job: it runs to its natural end and finishes with its own result, while the run as a whole shows `cancelled`. That was the cancel problem of 2026-10-27 and 2026-11-18: the `build` and `check-layer` jobs of `layer-ci.yml` had `if: always() && ...` (so that they run when `approve` is skipped), and a cancel changed nothing for them. They use `if: ${{ !cancelled() && ... }}` now. The job `result` keeps `always()` on purpose: it reports the outcome of a cancelled run and is short.
+
+Measured on 2026-11-19 (cancel lab, throw-away branch `test/cancel-lab` of agl-ci): three jobs that only sleep, without `if`, ended `cancelled` about 20 seconds after the cancel, also the one that ran `docker run` in the sidecar, with and without `--init`, and the `if: cancelled()` step ran. In a test of two jobs after a short one, the job with `if: always() && ...` was still running 4 minutes after the cancel, the one with `if: ${{ !cancelled() && ... }}` ended `cancelled`. Two real warm gates (meta-agl, runs 44560280598 and 44562136213) ran 36 and 44 seconds past the cancel and ended `success`; the log of the runner showed no cancel message for them. *(Not yet shown: that a cancel stops a running bitbake build cleanly. Test it after the pin of a caller carries the fix.)*
+
+A push to a pull request branch cancels the run in progress of that branch (concurrency group). Until the fix, that did not apply to the build jobs, which ran on; with it, a push throws away the running build of the previous commit (finished tasks stay in the sstate).
+
+`force-cancel` (`gh api -X POST repos/<org>/<repo>/actions/runs/<id>/force-cancel`) remains for a runner that hangs: the runner container exits, `run-loop.sh` removes the sidecar and the slot registers again about 25 minutes later (the stale offline registration is removed with `gh api -X DELETE orgs/<org>/actions/runners/<id>`). A job with `always()` needs it, so do not add `always()` to a job that must stay cancellable; use `!cancelled()`.
 
 ## Job time limit
 The `build` job has `timeout-minutes: 2880` (48 h; it was 10 h, then 24 h, which left about 2 h of margin for a cold Flutter demo image next to a second cold build). The first build of an image on an empty cache is cold: `agl-image-minimal` took
