@@ -25,7 +25,7 @@ shows the build on a runner with the labels `self-hosted,agl-fork`. In its log t
 *Expect:* 30 minutes from an **empty** local cache, `Sstate summary: Wanted 3537 Local 0 Mirrors 3532 Missed 5 (99% match)`: nearly everything came from the mirror.
 *Show (refused):* meta-agl#11 (closed), a fork pull request whose jobs ask for the trusted label. Each job ends in `Set up runner` with
 `agl-hook: job refused: pull request from fork dl9pf/meta-agl on a trusted host`.
-*Not shown yet:* a pull request from an outside contributor's account (the "Approve and run" gate); see scene 7.
+*Show (outside contributor):* meta-agl#21 (closed), a pull request from an account that is not a member of the organisation: held until "Approve and run workflows", then built on the `agl-fork` pool only, read-only hash server (chapter 13).
 
 ## Scene 3: reading a red run (7 minutes)
 *Say:* a red run says where to look; the log of the failing task is usually in the job log, the full bitbake output of fetch runs is no longer uploaded (build artifacts are off, chapter 13); the job log keeps its last lines.
@@ -59,7 +59,6 @@ quick measure of that (chapter 13).
 *Say:* 99% against 65%: the same task graph restored 65% when a second, aarch64 world was built next to the x86-64 image, and 99% once host and guest shared the architecture.
 
 ## Scene 7: what is not done (5 minutes, keep it honest)
-- A pull request from an outside contributor's account (the approval gate) has not been tested; the fork tests ran as an organisation admin, who GitHub does not count as outside.
 - The three layer repos are still behind the upstream at `git.automotivelinux.org` (the rebase is planned, it needs a ruleset lift for the force push).
 - Shelved: the KVM demo on x86-64 (install step) and the Xen test image on x86-64 (guest machine); both come from the layers' `MACHINE` hooks under kas (chapter 13). The Xen test image builds on raspberrypi5 (1 h 36 min) but without its Xen-specific boot setup, for the same reason; it is not in the matrix yet.
 - The Docker sidecar of a job is privileged: it separates a job from the host kernel only as far as containers do, so one pool per host is the real boundary (chapter 05, "Sidecar privilege").
