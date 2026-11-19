@@ -76,7 +76,7 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
 | Symptom | Look at | Likely cause |
 |---|---|---|
 | Builds on the builder show no progress for hours | `timeout 3 bash -c '</dev/tcp/<mirror-tunnel-address>/9393'` from the builder; `docker ps` on the mirror host | The hash server container is down (2026-11-16: it stopped with a restart of the mirror host, had no restart policy, and two builds idled about 17 hours; they went on a few minutes after the server was up again *(observed; why they resumed was not analysed)*). Fix: start it and `docker update --restart unless-stopped <container>` |
-| A cancelled run keeps running | `docker exec agl-d1 docker ps` | A normal cancel did not stop a build in two tests (chapter 13, "Cancelling a run"; cause unknown); `force-cancel` stops it and the slot re-registers after about 25 minutes *(observed earlier, not re-measured)* |
+| A cancelled run keeps running | `gh run view <id> --json jobs`: a job `in_progress` after the cancel | The job's `if:` uses `always()`, which GitHub never cancels (found 2026-11-19; `build` and `check-layer` use `!cancelled()` since the fix, a caller on an older pin still has it); `force-cancel` stops it and the slot re-registers after about 25 minutes (chapter 13, "Cancelling a run") |
 | Offline runners accumulate in the org | `gh api orgs/<org>/actions/runners` | Three offline registrations were found on 2026-11-18, one per slot; a slot restart leaves one *(inference from that count)*; delete the offline ones whose slot has an online replacement |
 | Fetch jobs fail with `early EOF` or 429 | Job log of the fetch pass | Upstream drops or throttles parallel clones; since agl-ci#65 and agl-ci#66 the layers come from the git mirror, the fill retries once and at most three jobs run at the same time. One fetch pass ran green with that (13 of 13, 2026-11-18); it was mostly cache hits, so it did not test the throttle *(not yet shown)* |
 | Hosts cannot reach the mirror | `curl -s -o /dev/null -w '%{http_code}\n' http://<mirror>:8080/dl/` (403 is right), `docker logs --since 20m agl-mirror` | Tunnel down, container stopped |
@@ -206,4 +206,3 @@ or `rewrite`, and the TLS port is off, so the paths of the article do not apply;
 - Move the mirror image to nginx 1.30.7 or later (the kernels are updated since 2026-11-18).
 - IPv6: test the read-write hash ports from outside once the mirror host gets a global address; consider binding 9191 and 9393 to the tunnel address instead of every address.
 - Backups of the hash server database, pruning, log rotation of `/var/log/agl-pull-sync.log` and `/var/log/agl-git-mirrors.log`.
-- A fix for cancelling a run (a different approach than a `cancelled()` step, chapter 13).
