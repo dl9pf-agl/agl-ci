@@ -44,7 +44,7 @@ dev=(); [ -c /dev/kvm ] && dev=(--device /dev/kvm) || echo "warn: no /dev/kvm" >
 # device (read here, the number differs per host). Trusted pool only: code of a fork pull request on an untrusted host gets no KVM. Not for gid 0.
 kvm_group=(); [ -c /dev/kvm ] && [ "${POOL:-trusted}" = trusted ] && [ "$(stat -c %g /dev/kvm)" != 0 ] && kvm_group=(--group-add "$(stat -c %g /dev/kvm)")
 
-cleanup() { "$E" rm -f "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
+cleanup() { "$E" rm -fv "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
             "$E" network rm "agl-n$slot" >/dev/null 2>&1 || true
             "$E" volume rm "agl-w$slot" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
