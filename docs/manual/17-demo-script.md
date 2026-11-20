@@ -48,7 +48,7 @@ quick measure of that (chapter 13).
 `ci/scripts/manual_dispatch.sh --tier nightly --mode fetch --watch` (copy the example first). `--mode fetch` only fills the cache and takes about 10 minutes.
 *Say:* a tier selects which matrix entries are built; one image on its own is built with a throw-away branch (chapter 13, "Build exactly one entry").
 *If a run does not start for hours:* GitHub delays dispatches and schedules by up to several hours at times; the run shows `queued` or `pending` with no jobs.
-*To stop a run:* `gh run cancel <id> -R <repo>`; **a normal cancel does not stop the build container on our hosts**, so a job can stay `in progress`; then
+*To stop a run:* `gh run cancel <id> -R <repo>`; a running build job ends `cancelled` after about 20 seconds (shown on 2026-11-20 with a running bitbake build, chapter 13, "Cancelling a run"). Only a job that stays `in_progress` after that (a caller pinned to an old agl-ci, or a hung runner) needs
 `gh api -X POST repos/<repo>/actions/runs/<id>/force-cancel` (the slot's runner restarts and is back after about 25 minutes).
 
 ## Scene 6: cache, mirror and hash server (5 minutes)
