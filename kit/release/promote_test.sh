@@ -115,4 +115,11 @@ out="$(env RELEASE_ROOT="$t/waiting2/root" RELEASE_STAGING_KEEP_DAYS=0 "$here/cl
 out="$(clean RELEASE_STAGING_KEEP_DAYS=0)"
 if [ ! -e "$t/good/root/staging/release/testrel/0.0.1" ] && [ -f "$t/good/root/release/testrel/0.0.1/SHA256SUMS" ] && grep -qx '/release/testrel/0.0.1/' "$t/good/root/release-done.txt"; then ok "an old promoted copy is removed, the release stays, the exclude line is written"; else bad "cleanup: $out"; fi
 
+# 8. Before the first release there is no staging/release at all: nothing to do, no error. (cleanup-staging.sh the same)
+mkdir -p "$t/empty/root" "$t/empty/ucb/kas/releases"
+out="$(env RELEASE_ROOT="$t/empty/root" RELEASE_UCB_DIR="$t/empty/ucb" RELEASE_KEYS_DIR="$t/good/keys/release" COSIGN="$cosign" "$tool" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && echo "$out" | grep -q 'nothing staged' && ok "no staging area yet: nothing to do, no error" || bad "empty root: $out"
+out="$(env RELEASE_ROOT="$t/empty/root2" "$here/cleanup-staging.sh" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "cleanup without a staging area is not an error" || bad "cleanup empty: $out"
+
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

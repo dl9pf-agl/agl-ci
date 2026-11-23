@@ -16,7 +16,7 @@ set -euo pipefail
 root="${RELEASE_ROOT:-/srv/mirror}"; days="${RELEASE_STAGING_KEEP_DAYS:-7}"
 [[ "$days" =~ ^[0-9]+$ ]] || { echo "cleanup-staging: RELEASE_STAGING_KEEP_DAYS must be a number" >&2; exit 1; }
 dry=0; [ "${1:-}" != -n ] || dry=1
-[ -d "$root/staging/release" ] || { echo "cleanup-staging: no $root/staging/release" >&2; exit 1; }
+[ -d "$root/staging/release" ] || { echo "cleanup-staging: no staging/release yet, nothing to do"; exit 0; }   # before the first release
 n=0
 while IFS= read -r -d '' d; do
   version="$(basename "$d")"; branch="$(basename "$(dirname "$d")")"
