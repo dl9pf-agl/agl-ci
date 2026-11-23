@@ -15,5 +15,8 @@ run kit/deploy_test.sh   # what a plain update keeps and how the old limit names
 run ci/scripts/premirror_test.sh   # the git mirror rewrite of kas: no backslash, survives kas-container's forwarding (needs python3)
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
+run ci/scripts/release-collect_test.sh   # which files of an image go into a release, the sums file, and what is refused (release process)
+run ci/scripts/release-build_test.sh   # the commands of a release build (kas flags, docker mounts) with stubs, and that a normal build is unchanged
+run python3 ci/scripts/release-check_test.py   # the kas statement of a release image against the pins file: each fault must fail (needs PyYAML)
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi
 exit "$fail"

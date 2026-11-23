@@ -17,14 +17,61 @@ TARGET="${_MATRIX_FIELDS[1]}"
 ENTRY_SDK="${_MATRIX_FIELDS[2]}"
 
 echo "build.sh: kas build $KASFILES (target=$TARGET)"
-# shellcheck disable=SC2046
-KAS_TARGET="$TARGET" kas_run build "$KASFILES"
+# --- begin release kas step (release-build_test.sh runs this block with stubs for kas_run and docker)
+if [ "${AGL_RELEASE:-}" = 1 ]; then
+  # --- Release build (agl-ci release.yml sets AGL_RELEASE=1; every other caller leaves it unset and takes the else branch) -------
+  # What differs from a normal build:
+  #   - kas writes a SLSA provenance statement (--provenance mode=min: mode=max would put values of the environment, such as
+  #     mirror and hash-server addresses, into a public file) to $TREE/build/attestation/kas-build.provenance.json;
+  #   - the target is given with --target, so that the statement records it (the environment variable KAS_TARGET is not recorded);
+  #   - kas needs at least one `artifacts:` entry in provenance mode (else it exits non-zero); the image manifest is always there,
+  #     and its sha256 becomes the subject of kas's statement. The files of the release are collected separately, below.
+  # The files are collected after the SDK step, by release-collect.sh, which runs in a container (see there).
+  : "${RELEASE_BRANCH:?RELEASE_BRANCH is not set}" "${RELEASE_VERSION:?RELEASE_VERSION is not set}"
+  [ "${KAS_EXEC:-kas-container}" = kas-container ] || { echo "build.sh: a release build needs KAS_EXEC=kas-container" >&2; exit 1; }
+  mkdir -p "$TREE/build/ci-kas"
+  cat > "$TREE/build/ci-kas/provenance.yml" <<YAML
+header:
+  version: 22
+artifacts:
+  manifest: tmp/deploy/images/$MACHINE/$TARGET-$MACHINE.manifest
+YAML
+  KASFILES="$KASFILES:build/ci-kas/provenance.yml"
+  # shellcheck disable=SC2046
+  KAS_TARGET="$TARGET" kas_run build --provenance mode=min --target "$TARGET" "$KASFILES"
+else
+  # shellcheck disable=SC2046
+  KAS_TARGET="$TARGET" kas_run build "$KASFILES"
+fi
+# --- end release kas step
 
 if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   echo "build.sh: populating SDK for $TARGET"
   # shellcheck disable=SC2046
   kas_run shell "$KASFILES" -c "bitbake -c populate_sdk $TARGET"
 fi
+
+# --- begin release collect step (release-build_test.sh runs this block with stubs for kas_run and docker)
+if [ "${AGL_RELEASE:-}" = 1 ]; then
+  # Collect the release files of this image (release-collect.sh explains what and why). It must run in a container: this script
+  # runs in the runner container, which cannot enter the cache directory (root:root 0700), while the sidecar's Docker daemon
+  # sees it. So: docker run on that daemon, as root, with the builder image (it has bash and coreutils), mounting
+  #   the build tree (read-only), this ci/scripts directory (read-only), the release staging area (read-write) and the small-file
+  #   directory (read-write; the workflow uploads it). The workspace has the same path in the runner and in the sidecar, and the
+  #   cache directory is mounted at the same path in both, so the same paths work on both sides.
+  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
+  engine="$ENGINE"   # this ci/scripts directory
+  staging="${RELEASE_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/staging/release}"
+  small="$TREE/build/release-small"
+  mkdir -p "$small"
+  docker run --rm --user 0 \
+    -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$staging:$staging" -v "$small:$small" \
+    -e AGL_TREE="$TREE" -e RELEASE_STAGING="$staging" -e RELEASE_BRANCH -e RELEASE_VERSION \
+    -e RELEASE_RUN_ID="${GITHUB_RUN_ID:-local}" -e RELEASE_SMALL_DIR="$small" \
+    --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
+    "$engine/release-collect.sh" --machine "$MACHINE" --target "$TARGET"
+fi
+# --- end release collect step
 
 # --- Collecting the build output for the artifact upload: OFF (2026-11-18) ---------------------------------------------------------
 # Why off: the images made about 232 GB of Actions storage in 18 days (chapter 13, "Build artifacts are off"). The upload step in
