@@ -50,7 +50,8 @@ owner="${repo%%/*}"
 [[ "$minsig" =~ ^[0-9]+$ ]] && [ "$minsig" -ge 1 ] || { echo "promote: RELEASE_MIN_SIGNATURES must be a number >= 1" >&2; exit 1; }
 [ -d "$ucb/kas/releases" ] || { echo "promote: RELEASE_UCB_DIR is not a checkout of agl-ucb: '$ucb'" >&2; exit 1; }
 touch "$root/release-done.txt" 2>/dev/null || true
-[ -d "$root/staging/release" ] || { echo "promote: no $root/staging/release (has the pull run?)" >&2; exit 1; }
+# Before the first release the builder has no staging/release, so the pull creates nothing: that is normal, not an error.
+mkdir -p "$root/staging/release"
 command -v "$cosign" > /dev/null || { echo "promote: cosign not found ($cosign)" >&2; exit 1; }
 mkdir -p "$root/release"
 
