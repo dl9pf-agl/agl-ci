@@ -286,4 +286,9 @@ kas_runtime_args() {
   if [ -n "${AGL_SITE_CONF:-}" ]; then
     printf -- '--runtime-args -v --runtime-args %s:/work/build/conf/site.conf:ro ' "${AGL_SITE_CONF}"
   fi
+  # kas takes the invocationId of its SLSA provenance statement from CI_JOB_URL (a GitLab variable name). kas-container does not
+  # forward it, so a release build sets it to the URL of the workflow run and it is passed in here (proven in CI on 2026-11-23).
+  if [ -n "${CI_JOB_URL:-}" ]; then
+    printf -- '--runtime-args -e --runtime-args CI_JOB_URL=%s ' "${CI_JOB_URL}"
+  fi
 }
