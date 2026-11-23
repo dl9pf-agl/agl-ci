@@ -10,3 +10,6 @@ paths:
   .github/workflows/repo-lint.yml:
     ignore:
       - 'property "workflow_(sha|repository)" is not defined in object type'
+  .github/workflows/release.yml:
+    ignore:
+      - 'property "workflow_(sha|repository)" is not defined in object type'
