@@ -1,0 +1,226 @@
+name: release
+# Reusable workflow of the release process (specification: the owner's RELEASE-SPEC, manual chapter 19 to come).
+# It is called by a small workflow in agl-ucb that runs on the push of a tag <branch>_<version> and pins this file by full SHA.
+# The caller job must grant `permissions: { contents: read, id-token: write }` (a reusable workflow cannot have more than its caller).
+#
+# What it does, in four jobs:
+#   matrix    (GitHub-hosted)  check the tag, take the release pins file of the tag, find the images of the release tier
+#   build     (self-hosted agl-pr, NO id-token)  one job per image: build it with kas provenance, collect its files into the release
+#                              staging area of the builder (CACHE_DIR/staging/release/<branch>/.<version>.partial), upload two
+#                              small files (sums, statement; kilobytes) as a workflow artifact. The images never leave the builder.
+#   attest    (runner from the input, the ONLY job with id-token: write)  check each statement against the pins file, attest each
+#                              image's sums file, write and sign the top-level SHA256SUMS (release-attest.sh)
+#   finalize  (self-hosted agl-pr, no id-token)  place the signed files, verify them against the real image files, and rename the
+#                              partial directory to the release (release-finalize.sh)
+# Why the signing is in its own job: a build job runs a lot of code (recipes, scripts); the job that holds the right to sign must
+# not be it. The attest job gets only the small files, never the images.
+# Pull requests never get here: the caller runs on a tag, and agl-ucb only lets release engineers create such tags.
+on:
+  workflow_call:
+    inputs:
+      attest_runs_on:
+        description: 'runs-on of the attest job as JSON: "ubuntu-24.04" (GitHub-hosted, default) or ["self-hosted","agl-attest"] (a dedicated node)'
+        type: string
+        default: '"ubuntu-24.04"'
+
+permissions: {}
+
+# One release at a time, and a release is never cancelled by another (a half-finished release is cleaned up by a person).
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      builder: ${{ steps.gen.outputs.builder }}
+      branch: ${{ steps.gen.outputs.branch }}
+      version: ${{ steps.gen.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      # agl-ucb at the tag: with no `ref` the checkout takes the commit that started the run, i.e. the tagged commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tree
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with: { cosign-release: v2.6.5 }
+      - id: gen
+        run: |
+          set -euo pipefail
+          # 1. What may run here: a tag in agl-ucb whose name is <branch>_<version>, and a release pins file for exactly that name.
+          [ "$GITHUB_REF_TYPE" = tag ] || { echo "::error::a release runs on a tag, not on $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
+          [ "$GITHUB_REPOSITORY" = "$GITHUB_REPOSITORY_OWNER/agl-ucb" ] || { echo "::error::a release runs in agl-ucb only, not in $GITHUB_REPOSITORY"; exit 1; }
+          [[ "$GITHUB_REF_NAME" =~ ^([a-z]+)_([0-9]+\.[0-9]+\.[0-9]+)$ ]] || { echo "::error::the tag '$GITHUB_REF_NAME' is not <branch>_<version>"; exit 1; }
+          branch="${BASH_REMATCH[1]}"; version="${BASH_REMATCH[2]}"
+          pins="tree/kas/releases/pins_${GITHUB_REF_NAME}.yml"
+          [ -f "$pins" ] || { echo "::error::$pins does not exist at the tag (prepare-release.sh makes it, a pull request merges it, then the tag goes on the merge commit)"; exit 1; }
+          # 2. Use the release pins file INSTEAD of kas/pins.yml in this throw-away tree: every script that reads kas/pins.yml then
+          #    sees the release pins. (The build jobs do the same, and the statement embeds the file that was used.)
+          cp "$pins" tree/kas/pins.yml
+          # 3. The builder image of this agl-ci commit, verified, then used to check out the layers at the pinned commits (kas) and to
+          #    read the release tier from their ci/build-matrix.yaml. No repo under test is pinned: AGL_PIN_* stay unset.
+          builder="ghcr.io/${GITHUB_REPOSITORY_OWNER}/agl-ci/builder@$(tr -d '[:space:]' < agl-ci/ci/builder.digest)"
+          agl-ci/scripts/verify-release.sh "$builder"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:$PWD" -w "$PWD" -e HOME=/tmp \
+            -e AGL_TREE="$PWD/tree" -e KAS_EXEC=kas -e CI=true \
+            --entrypoint /bin/bash "$builder" agl-ci/ci/scripts/checkout.sh
+          # 4. The images: every entry whose tiers contain `release`, of ALL layer repos (AGL_SCOPE is not set). An empty release
+          #    would be green and publish nothing: refuse it.
+          json="$(AGL_TREE="$PWD/tree" python3 agl-ci/ci/scripts/_matrix.py --json release)"
+          count="$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])["include"]))' "$json")"
+          [ "$count" -gt 0 ] || { echo "::error::no image has the tier release: nothing to release"; exit 1; }
+          {
+            echo "matrix=$json"
+            echo "builder=$builder"
+            echo "branch=$branch"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "release $branch $version: $count images" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.repo }}/${{ matrix.target }} on ${{ matrix.machine }})
+    needs: [matrix]
+    if: ${{ !cancelled() && needs.matrix.result == 'success' }}
+    # Only the trusted pool: a release is built from reviewed, merged, tagged sources, never from a pull request.
+    runs-on: [self-hosted, agl-pr]
+    timeout-minutes: 2880
+    # No id-token here, on purpose: nothing in this job can ask GitHub for a signing token.
+    permissions: { contents: read }
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
+    env:
+      CI: "true"
+      AGL_TREE: ${{ github.workspace }}/tree
+      KAS_EXEC: kas-container
+      KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
+      AGL_RELEASE: "1"                       # build.sh: release mode (kas provenance, collect the files)
+      RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
+      RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
+      CI_JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tree
+          persist-credentials: false
+      - name: release pins
+        run: |
+          set -euo pipefail
+          # The release pins file of the tag replaces kas/pins.yml in this throw-away tree (see the matrix job).
+          cp "tree/kas/releases/pins_${GITHUB_REF_NAME}.yml" tree/kas/pins.yml
+          echo "using kas/releases/pins_${GITHUB_REF_NAME}.yml as kas/pins.yml"
+      - name: layers
+        run: agl-ci/ci/scripts/checkout.sh
+      - name: build
+        env:
+          MACHINE: ${{ matrix.machine }}
+          FEATURES: ${{ matrix.features }}
+          TARGET: ${{ matrix.target }}
+        # --sdk-allowed false: the SDK is not collected into a release yet (release-collect.sh says so), so it is not built either.
+        run: agl-ci/ci/scripts/build.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --sdk-allowed false
+      # Only the two small files per image go to GitHub (kilobytes). The images stay on the builder.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-small-${{ matrix.machine }}-${{ matrix.target }}
+          path: tree/build/release-small
+          if-no-files-found: error
+          retention-days: 7
+
+  attest:
+    needs: [matrix, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    # The runner comes from the input: GitHub-hosted by default, a dedicated node later without changing anything else.
+    runs-on: ${{ fromJSON(inputs.attest_runs_on) }}
+    # The ONLY job that may sign: id-token: write lets it ask GitHub for the identity of this workflow.
+    permissions: { contents: read, id-token: write }
+    env:
+      MATRIX: ${{ needs.matrix.outputs.matrix }}
+      RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
+      RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tree
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with: { cosign-release: v2.6.5 }
+      # The small files of ALL images, merged into one directory with their relative paths.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-small-*
+          merge-multiple: true
+          path: small
+      - name: check and sign
+        env:
+          WORKFLOW_REPO: ${{ job.workflow_repository }}   # the job context exists in steps, not in the env of the job
+        run: |
+          set -euo pipefail
+          # What a signature of this job looks like: the identity is this workflow file in agl-ci at the pinned commit (40 hex
+          # characters), issued by GitHub's token service. release-attest.sh verifies every signature right after making it with
+          # exactly this, so a wrong identity fails here and not in the release.
+          repo_re="${WORKFLOW_REPO//./\\.}"
+          export COSIGN_VERIFY_ARGS="--certificate-identity-regexp ^https://github.com/${repo_re}/\\.github/workflows/release\\.yml@[0-9a-f]{40}\$ --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+          # COSIGN_SIGN_ARGS stays empty: keyless signing with the identity of this job.
+          agl-ci/ci/scripts/release-attest.sh --small small --pins "tree/kas/releases/pins_${GITHUB_REF_NAME}.yml" \
+            --matrix "$MATRIX" --out signed --branch "$RELEASE_BRANCH" --version "$RELEASE_VERSION"
+          { echo "### Release ${RELEASE_BRANCH} ${RELEASE_VERSION}: signed top level"; echo '```'; cat signed/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-signed
+          path: signed
+          if-no-files-found: error
+          retention-days: 7
+
+  finalize:
+    needs: [matrix, attest]
+    if: ${{ !cancelled() && needs.attest.result == 'success' }}
+    runs-on: [self-hosted, agl-pr]
+    permissions: { contents: read }
+    env:
+      KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
+      RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
+      RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-signed
+          path: signed
+      - name: finalize
+        run: |
+          set -euo pipefail
+          # release-finalize.sh needs the cache directory, which this container cannot enter: it runs as root in a container on the
+          # sidecar's Docker daemon (same arrangement as the collect step of build.sh). The staging area sits next to the sstate directory.
+          engine="$PWD/agl-ci/ci/scripts"; signed="$PWD/signed"
+          staging="${RELEASE_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/staging/release}"
+          docker run --rm --user 0 \
+            -v "$engine:$engine:ro" -v "$signed:$signed:ro" -v "$staging:$staging" \
+            -e RELEASE_STAGING="$staging" -e RELEASE_BRANCH -e RELEASE_VERSION -e RELEASE_RUN_ID="$GITHUB_RUN_ID" -e RELEASE_SIGNED_DIR="$signed" \
+            --entrypoint /bin/bash "$KAS_CONTAINER_IMAGE" "$engine/release-finalize.sh"

@@ -18,5 +18,8 @@ run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untru
 run ci/scripts/release-collect_test.sh   # which files of an image go into a release, the sums file, and what is refused (release process)
 run ci/scripts/release-build_test.sh   # the commands of a release build (kas flags, docker mounts) with stubs, and that a normal build is unchanged
 run python3 ci/scripts/release-check_test.py   # the kas statement of a release image against the pins file: each fault must fail (needs PyYAML)
+run ci/scripts/release-finalize_test.sh   # the last step of a release: verify against the real files, refuse unlisted files, publish by rename
+run ci/scripts/release-attest_test.sh   # check and sign with a throw-away key; SKIPs without cosign (the runner image has none)
+run ci/scripts/release-pipeline_test.sh   # collect, attest and finalize in a row on one fixture; SKIPs without cosign
 if [ "$fail" = 1 ] && [ "$mode" = report ]; then echo "::warning::LINT_MODE=report, findings ignored (break-glass). Restore enforce."; exit 0; fi
 exit "$fail"
