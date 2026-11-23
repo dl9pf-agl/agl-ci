@@ -28,11 +28,13 @@ if [ -n "${TLS_CERT:-}" ] || [ -n "${TLS_KEY:-}" ]; then
   [ -n "${MIRROR_NETWORK:-}" ] || tls_port=(-p "${TLS_PORT:-8443}:8443")
 fi
 git=(); [ ! -d "$CACHE_DIR/git" ] || git=(-v "$CACHE_DIR/git:/srv/mirror/git:ro")   # bare layer mirrors, if git-mirrors.sh made any
+# releases (kit/release/promote.sh): staging/release = pulled from the builder, not verified; release = verified and promoted. Both public.
+rel=(); for d in staging release; do mkdir -p "$CACHE_DIR/$d"; rel+=(-v "$CACHE_DIR/$d:/srv/mirror/$d:ro"); done
 net=(-p "$PORT:8080"); [ -z "${MIRROR_NETWORK:-}" ] || net=(--network "$MIRROR_NETWORK")   # host network: listens on 8080
 "$E" run -d --name "$NAME" --restart unless-stopped "${net[@]}" "${tls_port[@]}" \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
   -v "$here/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$here/locations.conf:/etc/nginx/mirror/locations.conf:ro" "${tls[@]}" \
-  -v "$CACHE_DIR/dl:/srv/mirror/dl:ro" -v "$CACHE_DIR/sstate:/srv/mirror/sstate:ro" "${git[@]}" \
+  -v "$CACHE_DIR/dl:/srv/mirror/dl:ro" -v "$CACHE_DIR/sstate:/srv/mirror/sstate:ro" "${git[@]}" "${rel[@]}" \
   "$IMAGE" >/dev/null
 echo "mirror up: http://$(hostname -f 2>/dev/null || hostname):$PORT/dl/ and /sstate/ (logs: $E logs $NAME)"
 [ "${#tls[@]}" -eq 0 ] || echo "          and https on port ${TLS_PORT:-8443} (with MIRROR_NETWORK=host: 8443)"

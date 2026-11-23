@@ -1,0 +1,10 @@
+# /etc/cron.d/agl-release on the DOWNLOAD SERVER. Example, copy and adjust (paths, user, rsync address of the builder).
+# Every 5 minutes: pull the staging area of the build host, update the agl-ucb checkout (the engineers' signatures are commits
+# there), then verify and promote. One flock for the whole chain; the log is kept for the maintainer.
+# release-done.txt (written by promote.sh) lists promoted releases, so the pull does not fetch them into staging again.
+# release-done.txt is written by cleanup-staging.sh (below), not by promote.sh: while the staging copy exists, the pull skips it anyway.
+# The pull sees staging/release/<branch>/<version> only when the release job has renamed its .partial directory (finalize).
+# To switch promotion to manual, put RELEASE_PROMOTE=manual in /etc/agl-release/promote.env; then run kit/release/promote.sh <branch> <version> by hand.
+*/5 * * * * agl-mirror flock -n /run/agl-release.lock sh -c '. /etc/agl-release/promote.env; touch "$RELEASE_ROOT/release-done.txt"; AREAS=staging SOURCES="$BUILD_RSYNC" RSYNC_EXTRA="--exclude-from=$RELEASE_ROOT/release-done.txt" MIRROR_ROOT="$RELEASE_ROOT" /opt/agl-ci/kit/mirror/pull-sync.sh && git -C "$RELEASE_UCB_DIR" pull -q --ff-only && /opt/agl-ci/kit/release/promote.sh' >> /var/log/agl-release.log 2>&1
+# Daily: remove staging copies of releases promoted more than RELEASE_STAGING_KEEP_DAYS (7) days ago.
+17 3 * * * agl-mirror flock -n /run/agl-release.lock sh -c '. /etc/agl-release/promote.env; /opt/agl-ci/kit/release/cleanup-staging.sh' >> /var/log/agl-release.log 2>&1

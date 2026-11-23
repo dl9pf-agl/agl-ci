@@ -9,7 +9,7 @@
 #                 is published on that address only; 0.0.0.0 and :: are refused.
 #   RSYNCD_ALLOW  REQUIRED. Address(es) or CIDR of the download server (rsyncd.conf "hosts allow"); everything else is refused.
 #   RSYNCD_PORT   default 873.
-#   CACHE_DIR     default /srv/agl-cache; its dl/, sstate/ and (if present) git/ are mounted read-only.
+#   CACHE_DIR     default /srv/agl-cache; its dl/, sstate/ and (if present) git/ and staging/ are mounted read-only.
 #   RSYNCD_IMAGE  default: the signed builder image of this checkout (ci/builder.digest); it has rsync and is on the host anyway.
 #   RSYNCD_NETWORK  optional docker network mode (e.g. host, for tests); then the daemon itself binds RSYNCD_BIND:RSYNCD_PORT.
 #   RSYNCD_NAME   container name, default agl-rsyncd.
@@ -31,6 +31,8 @@ case "$bind" in 0.0.0.0|::|"[::]") echo "RSYNCD_BIND must be one private address
 IMAGE="${RSYNCD_IMAGE:-ghcr.io/dl9pf-agl/agl-ci/builder@$(tr -d '[:space:]' < "$here/../../ci/builder.digest")}"
 mounts=(-v "$CACHE_DIR/dl:/srv/agl/dl:ro" -v "$CACHE_DIR/sstate:/srv/agl/sstate:ro")
 [ ! -d "$CACHE_DIR/git" ] || mounts+=(-v "$CACHE_DIR/git:/srv/agl/git:ro")
+# release builds (release.yml) leave their files in staging/release/<branch>/<version>; the download server pulls them like dl and sstate
+[ ! -d "$CACHE_DIR/staging" ] || mounts+=(-v "$CACHE_DIR/staging:/srv/agl/staging:ro")
 if [ -n "${RSYNCD_NETWORK:-}" ]; then net=(--network "$RSYNCD_NETWORK"); listen=(--address "$bind" --port "$PORT")
 else net=(-p "$bind:$PORT:873"); listen=(--port 873); fi
 "$E" rm -f "$NAME" >/dev/null 2>&1 || true
