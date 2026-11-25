@@ -48,7 +48,7 @@ mksplit() {
   while IFS= read -r -d '' f; do
     f="${f#"$s"/}"; mkdir -p "$d/signed/$(dirname "$f")"; mv "$s/$f" "$d/signed/$f"
   done < <(find "$s" -type f \( -name 'SHA256SUMS' -o -name 'SHA256SUMS.bundle' -o -name 'pins_*' -o -name '*.SHA256SUMS' -o -name '*.provenance.json' -o -name '*.slsa.intoto.bundle' \) -print0)
-  tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$d/signed" -czf "$d/asset.tgz" .
+  tar -C "$d/signed" -czf "$d/asset.tgz" .
 }
 # run NAME [env...]: promote.sh on fixture NAME (CI verified with the public key of "ci").
 run() {
@@ -132,6 +132,7 @@ mksplit asset
 out="$(run asset RELEASE_ASSET_URL="file://$t/asset/asset.tgz")"; rc=$?
 if [ "$rc" -eq 0 ] && promoted asset && echo "$out" | grep -q 'signed files fetched'; then ok "signed files are fetched from the release asset and the release is promoted"; else bad "asset flow: $out"; fi
 [ -f "$t/asset/root/release/testrel/0.0.1/SHA256SUMS.bundle" ] && ok "the unpacked signed files are part of the release" || bad "signed files missing in release"
+[ "$(stat -c %Y "$t/asset/root/release/testrel/0.0.1/SHA256SUMS")" = "$(stat -c %Y "$t/asset/signed/SHA256SUMS")" ] && ok "the unpacked signed files keep the time the attest job made them" || bad "unpacked file has another time"
 
 mksplit noasset
 out="$(run noasset RELEASE_ASSET_URL="file://$t/noasset/does-not-exist.tgz")"; rc=$?
@@ -152,6 +153,10 @@ mksplit linktar
 ( cd "$t/linktar" && mkdir -p linksrc && ln -s /etc/passwd linksrc/pins_testrel_0.0.1.yml && tar -czf link.tgz -C linksrc . )
 out="$(run linktar RELEASE_ASSET_URL="file://$t/linktar/link.tgz")"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'not a safe tar'; then ok "a tar with a symlink is refused"; else bad "link tar: $out"; fi
+
+# A hidden directory in staging (an unfinished .partial of the old flow) is skipped without any line in the log.
+mkdir -p "$t/good/root/staging/release/testrel/.0.0.9.partial"; out="$(run good)"
+echo "$out" | grep -q '0.0.9.partial' && bad "a hidden directory was reported: $out" || ok "a hidden staging directory is skipped silently"
 
 # 8. Before the first release there is no staging/release at all: nothing to do, no error. (cleanup-staging.sh the same)
 mkdir -p "$t/empty/root" "$t/empty/ucb/kas/releases"
