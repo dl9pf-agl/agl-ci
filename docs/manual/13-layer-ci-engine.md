@@ -128,6 +128,35 @@ directory copy, so it travels with the image for free. Report-only: a scan failu
 matrix entry carries the `agl-create-spdx` kas feature, so trowl runs image-only (hardening + CVE, no VEX/SBOM-diff). Trowl is
 pre-stable (preview tags only as of 2026-11-25); expect `docker/pins.env`'s `TROWL_REF` to need bumping often early on.
 
+A second, independent scanner, VulnScout (`github.com/savoirfairelinux/meta-vulnscout`), runs from the runner side too,
+like trowl, but for a security reason, not convenience: VulnScout's own bitbake task (`vulnscout_ci`) calls `docker`
+itself, from inside the bitbake task - fine on a developer's own workstation (their own Docker daemon already), never
+fine in CI, where that would hand the untrusted build environment access to the privileged sidecar Docker daemon that
+only the trusted runner is meant to reach (chapter 05: a job that reaches the sidecar can read the raw host disk via a
+nested privileged container). So CI never inherits the `vulnscout` bbclass at all.
+
+`AGL_VULNSCOUT=1` picks a DIFFERENT kas fragment depending on `CI` (`ci/scripts/_kas_runtime_args.sh`'s
+`kas_extra_includes`): with `CI=true` (every agl-ci job), `kas/local/vulnscout-sbom.yml` - plain `create-spdx`, no
+docker, writing the SPDX file bitbake already uses for that purpose; without it (a developer's own workstation),
+`kas/local/vulnscout.yml` - the full bbclass, docker and all, safe there because it is the developer's own daemon.
+`build.sh`'s vulnscout step then runs `ci/scripts/vulnscout-scan.sh` from the runner (same trust level and `DOCKER_HOST`
+as trowl-scan.sh), scanning that SPDX file with the pinned `VULNSCOUT_IMAGE` (`docker/pins.env`, digest-pinned: a plain
+Docker Hub image, no keyless-signing identity to cosign-verify against, unlike trowl's). It writes
+`vulnscout-report/` next to the image, the same way trowl does - both collect scripts carry either/both along,
+whichever exists.
+
+Two independent switches, not one, because VulnScout's severity bar and whether a match blocks anything are different
+decisions:
+- `VULNSCOUT_MATCH_CONDITION` (a plain shell variable read by vulnscout-scan.sh, default `"cvss >= 11"`) - CVSS caps at
+  10.0, so this never matches; the scan still runs and writes every report (all six built-in templates, always). A tier
+  that wants a real bar sets the variable before calling the script, e.g. `cvss >= 9.0 and affected == true`.
+- `AGL_VULNSCOUT_ENFORCE` (build.sh var) decides whether a match or a tool failure is allowed to fail the job at all.
+  Unset everywhere today: `build.sh` swallows it into a warning, same report-only shape as trowl, regardless of what
+  the bar is set to. Set to `1` for a given tier, the failure is let through.
+This mirrors the "none = report only" convention of agl-ci's own grype bars (chapter 09) - a real bar can be measured on
+any tier (PR, nightly, weekly, release) without that tier being able to block anyone until enforcement is deliberately
+turned on for it too.
+
 ## Trust rules
 ### Tier and pool
 The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
