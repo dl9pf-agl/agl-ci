@@ -70,6 +70,9 @@ run_check() {
 
 run_host_check "matrix-validate" "$PY" "$ENGINE/_matrix.py"
 
+# Clone the repositories of this entry first (the checkout falls back to the original URLs when the git mirror lacks one).
+run_host_check "checkout" kas_checkout "$KASFILES"
+
 run_check "bitbake-parse" "$KASFILES" "bitbake -p"
 
 run_check "license-manifest" "$KASFILES" \

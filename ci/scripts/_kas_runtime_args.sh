@@ -82,13 +82,23 @@ if [ "${KAS_EXEC:-kas-container}" = kas ]; then export AGL_WORKDIR="$TREE"; else
 # `eval echo` under /bin/sh (dash on Debian and Ubuntu, whose echo interprets backslash escapes); the first proof build (2026-11-16) got a
 # control character in the clone URL where "\1" stood. So no back-reference and no backslash is used.
 # First matching line wins. The repo under test (AGL_PIN_URL, for a fork pull request the fork) is not on the mirror and must be
-# cloned from where it is: its line maps it to itself, first. A host that is not listed is cloned from its origin.
+# cloned from where it is: its line maps it to itself, first; so do the repositories of our own organisation (see below). A host that
+# is not listed is cloned from its origin.
 agl_premirrors() {
   local h out=""
   if [ -n "${AGL_PIN_URL:-}" ]; then
     [[ "$AGL_PIN_URL" =~ ^https?://[A-Za-z0-9._/-]+$ ]] || { echo "kas_run: AGL_PIN_URL has unexpected characters: $AGL_PIN_URL" >&2; return 1; }
     out="^${AGL_PIN_URL//./[.]}\$ ${AGL_PIN_URL}"$'\n'
   fi
+  # The layers of our own organisation float on their branch (kas warns "branch without commit"). A mirror is only as new as its last
+  # update, so a mirrored tip is old and kas builds old code without an error. These are cloned from where they are: the prefix maps to
+  # itself (re.sub replaces only the matched part, so no back-reference is needed). AGL_GIT_DIRECT: URL prefixes, each ending in /;
+  # default: the organisation of the workflow (GITHUB_REPOSITORY_OWNER, also set for a fork pull request: it is the base repository's).
+  local p
+  for p in ${AGL_GIT_DIRECT:-${GITHUB_REPOSITORY_OWNER:+https://github.com/$GITHUB_REPOSITORY_OWNER/}}; do
+    [[ "$p" =~ ^https?://[A-Za-z0-9._/-]+/$ ]] || { echo "kas_run: AGL_GIT_DIRECT entry is not a URL prefix ending in /: $p" >&2; return 1; }
+    out+="^${p//./[.]} ${p}"$'\n'
+  done
   for h in ${AGL_GIT_MIRROR_HOSTS:-github.com git.openembedded.org git.yoctoproject.org code.qt.io}; do
     [[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "kas_run: AGL_GIT_MIRROR_HOSTS entry has unexpected characters: $h" >&2; return 1; }
     out+="^https?://${h//./[.]}/ ${AGL_MIRROR_URL}/git/${h}/"$'\n'
@@ -96,6 +106,17 @@ agl_premirrors() {
   printf '%s' "${out%$'\n'}"
 }
 # --- end premirrors
+# --- begin kas_checkout (ci/scripts/kas-checkout_test.sh runs this block)
+# kas has no fallback: a repository the git mirror lacks (new in a kas file, or a pin that was just bumped) fails the checkout.
+# kas_checkout <kas files>: check the repositories out; if that fails while the git mirror is on, once more from the original URLs,
+# with a warning. Repositories that are present are not touched by the later kas runs, so this is the only place that needs it.
+kas_checkout() {
+  kas_run checkout "$@" && return 0
+  [ -n "${AGL_GIT_MIRROR:-}" ] || return 1
+  echo "::warning title=git mirror miss::the checkout through the git mirror failed; cloning from the original URLs instead" >&2
+  ( unset AGL_GIT_MIRROR KAS_PREMIRRORS; kas_run checkout "$@" )
+}
+# --- end kas_checkout
 kas_run() {
   local v
   for v in AGL_HASHSERV_RW AGL_HASHSERV_UPSTREAM; do   # these end up in bitbake configuration: allow only host:port

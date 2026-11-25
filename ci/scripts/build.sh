@@ -17,6 +17,8 @@ TARGET="${_MATRIX_FIELDS[1]}"
 ENTRY_SDK="${_MATRIX_FIELDS[2]}"
 
 echo "build.sh: kas build $KASFILES (target=$TARGET)"
+# A release build runs no validate.sh: clone here, with the fallback to the original URLs when the git mirror lacks a repository.
+kas_checkout "$KASFILES"
 # --- begin release kas step (release-build_test.sh runs this block with stubs for kas_run and docker)
 if [ "${AGL_RELEASE:-}" = 1 ]; then
   # --- Release build (agl-ci release.yml sets AGL_RELEASE=1; every other caller leaves it unset and takes the else branch) -------
