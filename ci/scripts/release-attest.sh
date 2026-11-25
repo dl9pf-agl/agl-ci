@@ -25,7 +25,7 @@
 #   2. copy the pins file to the root of the output
 #   3. write the top-level SHA256SUMS: every file of the output (per-image sums, statements, bundles, pins file) with its hash
 #   4. sign the top-level file with cosign sign-blob and verify it
-# The output is what release-finalize.sh places next to the images. Nothing here touches the big files: only hashes are signed.
+# The output is the release asset: kit/release/promote.sh unpacks it next to the images on the download server. Nothing here touches the big files: only hashes are signed.
 set -euo pipefail
 set -f   # no pathname expansion: the cosign argument strings are split into words unquoted and hold [0-9a-f] (a glob)
 
@@ -73,7 +73,7 @@ while read -r machine target; do
   [ -f "$sums" ] && [ -f "$stmt" ] || die "files of $target on $machine are missing in $small/$rel (did its build job upload them?)"
   echo "release-attest: $target on $machine: checking the statement"
   python3 "$here/release-check.py" --statement "$stmt" --pins "$pins" --sums "$sums" --target "$target" < /dev/null || die "$target on $machine: the statement does not match the pins file; nothing is signed"
-  # Copies into the output: the signed files are the ones the build jobs wrote (release-finalize.sh compares them again).
+  # Copies into the output: the signed files are the ones the build jobs wrote (promote.sh checks them against the signed sums again).
   mkdir -p "$out/$rel"
   cp "$sums" "$stmt" "$out/$rel/"
   # The predicate is the part of the statement that says HOW the image was built; the sums file is the subject (its hash is what is signed).

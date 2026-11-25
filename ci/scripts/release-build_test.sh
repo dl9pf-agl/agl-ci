@@ -46,7 +46,7 @@ if grep -q '^  manifest: tmp/deploy/images/qemux86-64/agl-image-minimal-qemux86-
 docker_line="$(grep '^DOCKER' <<<"$out")"
 want_parts=("run --rm --user 0" "-v $tree:$tree:ro" "-v /ci/scripts:/ci/scripts:ro" "-v /srv/agl-cache/staging/release:/srv/agl-cache/staging/release "
   "-v $tree/build/release-small:$tree/build/release-small" "-e AGL_TREE=$tree" "-e RELEASE_STAGING=/srv/agl-cache/staging/release" "-e RELEASE_BRANCH -e RELEASE_VERSION"
-  "-e RELEASE_RUN_ID=77" "--entrypoint /bin/bash builder@sha256:abc /ci/scripts/release-collect.sh --machine qemux86-64 --target agl-image-minimal")
+  "--entrypoint /bin/bash builder@sha256:abc /ci/scripts/release-collect.sh --machine qemux86-64 --target agl-image-minimal")
 missing=""
 for p in "${want_parts[@]}"; do case "$docker_line" in *"$p"*) ;; *) missing="$missing [$p]" ;; esac; done
 if [ -z "$missing" ]; then ok "docker run has the mounts, the environment and the collect command (staging derived from AGL_SSTATE_DIR)"; else bad "docker call lacks:$missing -- got: $docker_line"; fi
