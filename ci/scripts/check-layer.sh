@@ -38,4 +38,5 @@ for l in $CHECK_LAYERS; do
 done
 # dl-shared: this is the first bitbake run of a job, so it fetches the uninative tarball; without the shared
 # downloads it lands in the throw-away build/downloads and never reaches the cache.
+kas_checkout "build/ci-kas/_validate-base.yml:kas/pins.yml$(kas_dl_include)"
 kas_run shell "build/ci-kas/_validate-base.yml:kas/pins.yml$(kas_dl_include)" -c "yocto-check-layer$CHECK_LAYER_PATHS $CHECK_LAYER_ARGS"

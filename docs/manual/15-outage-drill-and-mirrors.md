@@ -206,6 +206,21 @@ puts a line first that maps `AGL_PIN_URL` (for a fork pull request the fork) to 
 other layers use the mirror (tested with real kas: without that line the checkout fails with "repository ... not found"). Not
 done: the first clone in `checkout.sh` of the workflow uses the original URLs (the mirror drill covers the sources, not yet this clone).
 
+**Stale tip and mirror miss (2026-11-26).** A mirror is only as new as its last update, and a merge is not followed by one. Two things
+went wrong with that. (1) A layer that floats on its branch (meta-agl, meta-agl-demo, meta-agl-devel) was cloned from the mirror at an
+old tip, and kas built old code **without any error**; the first nightly test failed only because the old tip lacked a file it needed
+(`kas/feature/trowl.yml`). (2) A repository that is new in a kas file (meta-trowl) was not in the mirror at all, and the checkout failed
+with "repository ... not found". The engine now does two things. The repositories of our own organisation are cloned from where they
+are: `agl_premirrors()` adds a rule that maps the prefix `https://github.com/<GITHUB_REPOSITORY_OWNER>/` to itself (the owner of the
+base repository also in a fork pull request); `AGL_GIT_DIRECT` replaces the prefix, a space separated list of URL prefixes that end in
+`/`. And `kas_checkout`, which `validate.sh`, `build.sh` (a release build runs no `validate.sh`) and `check-layer.sh` call before their
+first kas run, clones the repositories and, when that fails while the mirror is on, tries once more from the original URLs and prints a
+warning "git mirror miss". Repositories that are present are not touched by the later kas runs, so those are the only places that
+need the fallback; `fetch.sh` and `drill.sh` stay as they are, because a drill must see the mirror fail. Also still true: a cron
+refresh of the mirror cannot make a floating layer current (several commits can land between two runs); it only keeps the fallback
+for an outage of GitHub fresh. Pinned externals are not affected by a stale tip, only by a pin that was just bumped, which the fallback
+covers while GitHub is up.
+
 #### Order of reports and sync rules
 **Order of reports, checked in oe-core:** `sstate.bbclass` runs `sstate_report_unihash` before
 `sstate_create_and_sign_package` in the same postfunc. The hashserv learns a result seconds before the object exists.

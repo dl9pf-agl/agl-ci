@@ -14,6 +14,7 @@ run kit/run-loop_test.sh   # which slot gets which label and limits (the lint sl
 run kit/deploy_test.sh   # what a plain update keeps and how the old limit names become the RUNNER limits
 run kit/release/promote_test.sh   # the download server verifies and promotes a release: every fault is refused, manual mode, idempotent (SKIPs without cosign)
 run ci/scripts/premirror_test.sh   # the git mirror rewrite of kas: no backslash, survives kas-container's forwarding (needs python3)
+run ci/scripts/kas-checkout_test.sh   # kas_checkout: from the original URLs when the git mirror cannot serve a repository (stubs, no kas)
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
 run ci/scripts/release-collect_test.sh   # which files of an image go into a release, the sums file, and what is refused (release process)
