@@ -11,7 +11,7 @@
 #   vulnscout-scan.sh --deploy-dir <dir> --target <target> --machine <machine>
 #
 # Environment:
-#   VULNSCOUT_IMAGE            the pinned image@digest of ghcr.io/sflinux/vulnscout (docker/pins.env), required
+#   VULNSCOUT_IMAGE            the pinned image@digest of ghcr.io/sflinux/vulnscout; read from docker/pins.env when not set, required
 #   VULNSCOUT_MATCH_CONDITION  the severity bar passed to VulnScout's own --match-condition (default "cvss >= 11":
 #                               CVSS caps at 10.0, so this never matches - the scan still runs and writes every report)
 #
@@ -38,6 +38,14 @@ done
 [ -d "$deploy" ] || die "no deploy directory: $deploy"
 [[ "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --target: '$target'"
 [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --machine: '$machine'"
+
+# The pin lives in docker/pins.env, the one file of agl-ci's tool versions. No workflow puts it into the environment of a build job
+# (the release and nightly builds ran without it and this script stopped at the first line below), so read it here unless the caller
+# already set it. AGL_PINS_ENV points to another file (the tests use it to simulate a missing pin).
+here="$(cd "$(dirname "$0")" && pwd)"
+pins="${AGL_PINS_ENV:-$here/../../docker/pins.env}"
+# shellcheck source=../../docker/pins.env disable=SC1091
+[ -n "${VULNSCOUT_IMAGE:-}" ] || [ ! -f "$pins" ] || . "$pins"
 image="${VULNSCOUT_IMAGE:?VULNSCOUT_IMAGE is not set (docker/pins.env)}"
 condition="${VULNSCOUT_MATCH_CONDITION:-cvss >= 11}"
 

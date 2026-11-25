@@ -72,7 +72,15 @@ if ! echo "$out" | grep -q '^DOCKER run'; then ok "the scan does not run when ve
 # 6. Bad names/missing env are refused.
 out="$(TROWL_REF=v0.1.0-preview.5 "$tool" --deploy-dir "$t/ext4/deploy" --target '../x' --machine "$M" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a path in --target is refused"; else bad "path in --target accepted"; fi
-out="$("$tool" --deploy-dir "$t/ext4/deploy" --target img --machine "$M" 2>&1)"; rc=$?
+out="$(AGL_PINS_ENV=/dev/null "$tool" --deploy-dir "$t/ext4/deploy" --target img --machine "$M" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'TROWL_REF is not set'; then ok "a missing TROWL_REF is refused"; else bad "missing TROWL_REF accepted: $out"; fi
+
+# 7. Not set by the caller: the pin is read from docker/pins.env (the case of the release and nightly builds, which set nothing).
+bin="$(stubbin ext4)"
+printf 'TROWL_REF=v9.9.9-fromfile\n' > "$t/pins.env"
+out="$(env -u TROWL_REF PATH="$bin:$PATH" AGL_PINS_ENV="$t/pins.env" "$tool" --deploy-dir "$t/ext4/deploy" --target img --machine "$M" 2>&1)"
+if echo "$out" | grep -q 'v9.9.9-fromfile'; then ok "the pin is read from the pins file when the environment has none"; else bad "pins file not used: $out"; fi
+out="$(env -u TROWL_REF PATH="$bin:$PATH" "$tool" --deploy-dir "$t/ext4/deploy" --target img --machine "$M" 2>&1)"
+if echo "$out" | grep -q 'TROWL_REF is not set'; then bad "the docker/pins.env of this checkout was not read: $out"; else ok "the docker/pins.env of this checkout provides TROWL_REF"; fi
 
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

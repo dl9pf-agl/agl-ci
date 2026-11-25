@@ -63,9 +63,17 @@ out="$(run fail DOCKER_RUN_FAIL=1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a docker failure makes the script exit non-zero"; else bad "docker failure not propagated: $out"; fi
 
 # 6. Missing env / bad names.
-out="$("$tool" --deploy-dir "$t/ok/deploy" --target img --machine "$M" 2>&1)"; rc=$?
+out="$(AGL_PINS_ENV=/dev/null "$tool" --deploy-dir "$t/ok/deploy" --target img --machine "$M" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'VULNSCOUT_IMAGE is not set'; then ok "a missing VULNSCOUT_IMAGE is refused"; else bad "missing VULNSCOUT_IMAGE accepted: $out"; fi
 out="$(VULNSCOUT_IMAGE=x "$tool" --deploy-dir "$t/ok/deploy" --target '../x' --machine "$M" 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a path in --target is refused"; else bad "path in --target accepted"; fi
+
+# 7. Not set by the caller: the image is read from docker/pins.env (the case of the release and nightly builds, which set nothing).
+printf 'VULNSCOUT_IMAGE=sflinux/vulnscout@sha256:fromfile\n' > "$t/pins.env"
+bin="$(stubbin ok)"
+out="$(env -u VULNSCOUT_IMAGE PATH="$bin:$PATH" AGL_PINS_ENV="$t/pins.env" "$tool" --deploy-dir "$t/ok/deploy" --target img --machine "$M" 2>&1)"
+if echo "$out" | grep -q 'sha256:fromfile'; then ok "the image is read from the pins file when the environment has none"; else bad "pins file not used: $out"; fi
+out="$(env -u VULNSCOUT_IMAGE PATH="$bin:$PATH" "$tool" --deploy-dir "$t/ok/deploy" --target img --machine "$M" 2>&1)"
+if echo "$out" | grep -q 'VULNSCOUT_IMAGE is not set'; then bad "the docker/pins.env of this checkout was not read: $out"; else ok "the docker/pins.env of this checkout provides VULNSCOUT_IMAGE"; fi
 
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi
