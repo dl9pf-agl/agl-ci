@@ -108,6 +108,26 @@ images stay in the sstate and in the build directory of the runner; the validate
 job log. To revive: remove the `# ` prefix of the step and of the copy in `build.sh` (both carry a note), and set the nightly
 `retention-days` to 7 days (done in the commented step).
 
+## Nightly publishing and trowl (2026-11-25)
+Nightly images bypass GitHub Actions storage entirely instead of reviving it: `AGL_NIGHTLY=1` (set by `layer-ci.yml`'s `build`
+job for the nightly tier only) makes `build.sh` call `ci/scripts/nightly-collect.sh`, which copies the image into
+`NIGHTLY_STAGING/.<date>.partial/<repo>/<machine>/deploy/images/<machine>/` on the builder's own cache directory (same
+root-in-a-container arrangement as `release-collect.sh`, same cache-directory permission reason). A new `nightly-finalize` job
+renames `.partial` to `<date>` once every build job of the run is done, so the download server's pull (`kit/mirror/pull-sync.sh`,
+new `AREAS=nightly` cron line) never sees a half-written run. No signing, no SHA256SUMS: nobody downstream verifies a nightly.
+Served at the download server's top level, `/nightly/<date>/...` (own nginx location, own mount in `kit/mirror/run.sh`, kept
+apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHTLY_KEEP_DAYS` (default 7) by
+`kit/release/cleanup-nightly.sh`, same cron chain; the builder's own copy is not pruned automatically (same as a staged, never
+promoted release - cleaned up there, by hand).
+
+Also new: `ci/scripts/trowl-scan.sh` (gated by `AGL_TROWL=1`, set for nightly and release, not yet for push-pr - the code path
+is ready, the workflow just doesn't flip the flag there yet) runs trowl (`github.com/corefense-security/trowl`, pinned by tag
+in `docker/pins.env`, verified by cosign keyless identity before every run) against the built image right after `kas build`,
+writing `trowl-report/` directly into `tmp/deploy/images/<machine>/` - which both collect scripts then carry along as a plain
+directory copy, so it travels with the image for free. Report-only: a scan failure never fails the build. No `--sbom` yet: no
+matrix entry carries the `agl-create-spdx` kas feature, so trowl runs image-only (hardening + CVE, no VEX/SBOM-diff). Trowl is
+pre-stable (preview tags only as of 2026-11-25); expect `docker/pins.env`'s `TROWL_REF` to need bumping often early on.
+
 ## Trust rules
 ### Tier and pool
 The tier decides which matrix entries run and, once release and nightly jobs have their own runner pool and artifact
