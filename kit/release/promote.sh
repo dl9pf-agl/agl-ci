@@ -175,7 +175,7 @@ check_one() {
 list=()
 if [ "$#" -eq 2 ]; then list=("$1 $2")
 elif [ "$#" -eq 0 ]; then
-  while IFS= read -r -d '' d; do list+=("$(basename "$(dirname "$d")") $(basename "$d")"); done < <(find "$root/staging/release" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z)
+  while IFS= read -r -d '' d; do list+=("$(basename "$(dirname "$d")") $(basename "$d")"); done < <(find "$root/staging/release" -mindepth 2 -maxdepth 2 -type d ! -name '.*' -print0 | sort -z)
 else echo "usage: promote.sh [<branch> <version>]" >&2; exit 1; fi
 
 failed=0

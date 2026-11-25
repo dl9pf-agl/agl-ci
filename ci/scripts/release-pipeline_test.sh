@@ -77,7 +77,7 @@ out="$(COSIGN="$cosign" COSIGN_SIGN_ARGS="$sign_args" COSIGN_VERIFY_ARGS="$verif
   --matrix "$matrix" --out "$t/signed" --branch testrel --version 0.0.1 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "release-attest.sh accepted the output of release-collect.sh and signed it"; else bad "attest refused the collect output: $out"; fi
 # The release asset, made the way release.yml makes it.
-tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$t/signed" -czf "$t/release-signed.tar.gz" .
+tar -C "$t/signed" -czf "$t/release-signed.tar.gz" .
 
 # 3. The download server: the pull merges both staging areas; an engineer key and its signature (a file in a checkout of agl-ucb).
 server="$t/server"; mkdir -p "$server/staging/release" "$t/ucb/kas/releases" "$t/keys/release"

@@ -220,7 +220,7 @@ jobs:
       - name: publish the signed files
         run: |
           set -euo pipefail
-          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C signed -czf release-signed.tar.gz .
+          tar -C signed -czf release-signed.tar.gz .   # plain tar: the files keep their real times (the tar is not signed; promote.sh checks every file)
           gh release create "$GITHUB_REF_NAME" release-signed.tar.gz signed/SHA256SUMS signed/SHA256SUMS.bundle \
             --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
             --notes "Signed checksums of release ${RELEASE_BRANCH} ${RELEASE_VERSION}. The images are on the download server once an engineer has countersigned."

@@ -6,6 +6,10 @@
 #   kit/release/run.sh            every 5 minutes
 #   kit/release/run.sh cleanup    daily
 set -euo pipefail
+
+# cron starts with PATH=/usr/bin:/bin; cosign is usually installed in /usr/local/bin
+PATH="/usr/local/sbin:/usr/local/bin:$PATH"; export PATH
+
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # shellcheck source=/dev/null
 . "${RELEASE_ENV:-/etc/agl-release/promote.env}"
