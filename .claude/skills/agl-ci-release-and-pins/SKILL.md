@@ -13,7 +13,7 @@ description: How pins work across AGL CI and what a release needs - callers pinn
 | Runner image on hosts | `kit/runner.digest` | Then `./kit/update.sh` on each host. |
 | External layers (poky, meta-openembedded, BSPs, bitbake...) | agl-ucb `kas/pins.yml` under `overrides.repos` | Pinned together; they drift out of mutual compatibility if bumped one by one (meta-flutter vs oe-core). |
 | `meta-agl`, `meta-agl-demo`, `meta-agl-devel` | **not pinned: float on the tip of their branch** (decision 2026-10-28) | The repo under test is pinned by a generated `layer-pin.yml` in CI. |
-| Release | **written-out pin** of everything, stored with the release | Below. |
+| Release | agl-ucb `kas/releases/pins_<branch>_<version>.yml`: **all** repos (23 today) at one commit each, made by `scripts/prepare-release.sh`; `release.yml` copies it over `kas/pins.yml` in its throw-away tree | Manual chapter 19; section "A release of the AGL images" below. |
 
 Image digests change with every commit (`SOURCE_DATE_EPOCH` = last commit time), so a digest in a file refers to a published build, not to "the source".
 
@@ -28,3 +28,9 @@ Because the three AGL layers float, a run is not described by the pins file alon
 
 ## Cross-repo consequences
 Floating means a red `master` of demo or devel turns meta-agl PRs red (its matrix pulls them via `needs:`). A repo under test that is also in `pins.yml` would be overridden by the pin: do not add the three AGL layers to `pins.yml` (the generated pin and the "tree is at the commit under test" check exist because that happened).
+
+## A release of the AGL images (chapter 19)
+- Tag `<branch>_<version>` in agl-ucb (admins only, ruleset "release tags") starts agl-ucb `release.yml`, which calls agl-ci `release.yml` **pinned by commit**; the caller grants `contents: write, id-token: write` (ceiling). Bump that pin by PR like every other pin; the pins file and the tag go on the same merge commit.
+- Jobs: matrix (hosted) -> build per image (pool, any host, `AGL_RELEASE=1`, collects into that host's `staging/release/<branch>/<version>/`) -> attest (hosted, the only `id-token`) -> publish (hosted, the only `contents: write`; GitHub release with `release-signed.tar.gz`, `SHA256SUMS`, bundle).
+- Download server cron (`kit/release/run.sh`): pull `staging` from all build hosts, `git pull` agl-ucb, `promote.sh` (CI signature + engineer signature file `kas/releases/<tag>.SHA256SUMS.<id>.sig`, all hashes, then copy to `release/`). `RELEASE_PROMOTE=manual` switches promotion off.
+- A version is used once. Two images of one machine in the `release` tier need the same kernel. Rehearsal: `releasetest_0.0.1` to `0.0.3` (the last one passed end to end).

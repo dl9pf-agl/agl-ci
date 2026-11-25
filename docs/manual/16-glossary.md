@@ -58,4 +58,7 @@ Terms in alphabetical order inside each group. The chapter that explains a term 
 | SBOM, provenance | Attestations attached to an image: component list (SPDX) and build facts (SLSA) | 04 |
 | countersignature | The release engineer's YubiKey signature on the same digest | 06 |
 | VEX, waiver | OpenVEX statement that a finding does not affect us; it removes the finding from the bar and is listed in the report | 09 |
+| pins file (release) | `kas/releases/pins_<branch>_<version>.yml` in agl-ucb: every repo of every fragment at one commit; replaces `kas/pins.yml` for the release build | 19 |
+| staging, promote | Unverified, public copy of a release's files on the download server, and the script (`promote.sh`) that verifies and copies it to `release/` | 19 |
+| release asset | `release-signed.tar.gz`, `SHA256SUMS` and its bundle on the GitHub release of the tag: how the signed files reach the download server | 19 |
 | ruleset, CODEOWNERS | GitHub branch rules as code (`policy/github/ruleset-main.json`); the owner file that requests reviews | 12 |

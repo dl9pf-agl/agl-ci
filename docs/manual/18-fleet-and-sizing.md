@@ -27,6 +27,8 @@ The host that runs trusted jobs and the host that runs fork code are different m
 | Mirror host | Everybody | Mirror web (8080), hash server read-only (9292/9494) | Public, read-only |
 | Upstreams | Mirror host | Layer repositories, every 30 minutes (`/etc/cron.d/agl-git-mirrors`, 23 repositories) | Outbound only |
 | Builder | Upstreams | Only the fetch pass: sources (`mode: fetch` reads the real upstreams); layers come from the git mirror when `GIT_MIRROR=1` (chapter 15) | Outbound only |
+| Builders | Mirror host (download server) | `staging/release/<branch>/<version>/` of every build host, every 5 minutes (`kit/release/run.sh`, `/etc/cron.d/agl-release`) | Same rsync daemon and walls as `dl/` and `sstate/`; the mirror host is a build host too and fills the same tree directly |
+| Mirror host | GitHub | `git pull` of agl-ucb (engineer signatures), download of the signed release asset | Outbound only, anonymous (public repository) |
 
 Ufw does not see ports that Docker publishes. The walls are therefore the bind address of the published port, `hosts allow` of the rsync daemon and the
 `DOCKER-USER` rule, not ufw rules for those ports. Check from outside: the read-write port must time out on the public address and open through the
