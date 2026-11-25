@@ -45,6 +45,15 @@ else
 fi
 # --- end release kas step
 
+# --- begin trowl scan step (trowl-build_test.sh runs this block with a stub trowl-scan.sh)
+if [ "${AGL_TROWL:-}" = 1 ]; then
+  # Report-only: a scan failure (tool bug, unsupported image) must not fail the build (trowl-scan.sh explains why/where it writes).
+  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
+  "$ENGINE/trowl-scan.sh" --deploy-dir "$TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE" \
+    || echo "build.sh: WARNING: trowl scan failed or found nothing to scan (report-only, build continues)" >&2
+fi
+# --- end trowl scan step
+
 if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   echo "build.sh: populating SDK for $TARGET"
   # shellcheck disable=SC2046

@@ -112,4 +112,22 @@ if [ "$rc" -ne 0 ]; then ok "a path in the machine name is refused"; else bad "p
 left=0; for v in 0.0.3 0.0.4; do [ ! -e "$t/stage/testrel/$v" ] || left=1; done
 if [ "$left" -eq 0 ]; then ok "refused calls left nothing behind"; else bad "a refused call left a directory"; fi
 
+# 9. trowl-report/ (ci/scripts/build.sh's trowl scan step, AGL_TROWL=1): a whole directory, carried into the release, its
+#    files listed in the sums (promote.sh's own checks then cover the merged/signed/asset flow; not retested here).
+mkdeploy "$t/tree8" agl-image-minimal kernel-A
+mkdir -p "$t/tree8/build/tmp/deploy/images/$M/trowl-report"
+echo '<html></html>' > "$t/tree8/build/tmp/deploy/images/$M/trowl-report/index.html"
+echo '{}' > "$t/tree8/build/tmp/deploy/images/$M/trowl-report/report.json"
+out="$(collect "$t/tree8" agl-image-minimal RELEASE_VERSION=0.0.5)"; rc=$?
+tdest="$t/stage/testrel/0.0.5/$M/deploy/images/$M"
+if [ "$rc" -eq 0 ] && [ -f "$tdest/trowl-report/index.html" ] && [ -f "$tdest/trowl-report/report.json" ]; then
+  ok "trowl-report/ is collected recursively"
+else bad "trowl-report/ missing or collect failed: $out"; fi
+if grep -q ' trowl-report/index.html$' "$tdest/agl-image-minimal.SHA256SUMS" && grep -q ' trowl-report/report.json$' "$tdest/agl-image-minimal.SHA256SUMS"; then
+  ok "trowl-report/'s files are listed in the sums"
+else bad "trowl-report/ not in the sums: $(cat "$tdest/agl-image-minimal.SHA256SUMS")"; fi
+if (cd "$tdest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2>&1); then
+  ok "the sums file verifies with trowl-report/ included"
+else bad "sums file with trowl-report/ does not verify"; fi
+
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

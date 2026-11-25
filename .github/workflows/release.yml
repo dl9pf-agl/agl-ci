@@ -109,6 +109,7 @@ jobs:
       KAS_EXEC: kas-container
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
       AGL_RELEASE: "1"                       # build.sh: release mode (kas provenance, collect the files)
+      AGL_TROWL: "1"                         # build.sh: trowl scan step; release-collect.sh carries trowl-report/ along
       RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
       RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
       CI_JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
