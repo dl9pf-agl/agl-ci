@@ -8,7 +8,7 @@
 #   trowl-scan.sh --deploy-dir <dir> --target <target> --machine <machine>
 #
 # Environment:
-#   TROWL_REF   the pinned release tag of ghcr.io/corefense-security/trowl (docker/pins.env), required
+#   TROWL_REF   the pinned release tag of ghcr.io/corefense-security/trowl; read from docker/pins.env when not set, required
 #   COSIGN      cosign binary (default cosign)
 #
 # Flow:
@@ -38,6 +38,14 @@ done
 [ -d "$deploy" ] || die "no deploy directory: $deploy"
 [[ "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --target: '$target'"
 [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --machine: '$machine'"
+
+# The pin lives in docker/pins.env, the one file of agl-ci's tool versions. No workflow puts it into the environment of a build job
+# (the release and nightly builds ran without it and this script stopped at the first line below), so read it here unless the caller
+# already set it. AGL_PINS_ENV points to another file (the tests use it to simulate a missing pin).
+here="$(cd "$(dirname "$0")" && pwd)"
+pins="${AGL_PINS_ENV:-$here/../../docker/pins.env}"
+# shellcheck source=../../docker/pins.env disable=SC1091
+[ -n "${TROWL_REF:-}" ] || [ ! -f "$pins" ] || . "$pins"
 ref="${TROWL_REF:?TROWL_REF is not set (docker/pins.env)}"
 cosign="${COSIGN:-cosign}"
 image="ghcr.io/corefense-security/trowl"
