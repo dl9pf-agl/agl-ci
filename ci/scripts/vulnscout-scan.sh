@@ -60,7 +60,9 @@ mkdir -p "$report"
 reports=(all_assessments.adoc match_condition.adoc summary.adoc time_estimate.csv vulnerabilities.csv vulnerability_summary.txt)
 report_args=()
 for r in "${reports[@]}"; do report_args+=(--report "$r"); done
+# The image's ENTRYPOINT is /scan/src/entrypoint.sh, so the arguments below go to it directly. Writing the path here again made the
+# script run `entrypoint.sh /scan/src/entrypoint.sh ...` and stop with "Unknown command" (nightly test, 2026-11-25).
 docker run --rm -v "$deploy:$deploy:ro" -v "$report:/scan/outputs" "$image" \
-  /scan/src/entrypoint.sh --project agl --variant "$target-$machine" --add-spdx "$spdx" \
+  --project agl --variant "$target-$machine" --add-spdx "$spdx" \
   --match-condition "$condition" "${report_args[@]}"
 echo "vulnscout-scan: report written to $report"
