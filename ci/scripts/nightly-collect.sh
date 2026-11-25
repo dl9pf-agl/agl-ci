@@ -18,8 +18,8 @@
 # Flow, in the order it runs:
 #   1. check the arguments and the environment
 #   2. guard the nightly directory (partial directory of another run: refuse; nothing is deleted automatically)
-#   3. select the files: the image's own plain-named files, the machine's shared kernel/boot files, and trowl-report/ if
-#      ci/scripts/trowl-scan.sh (AGL_TROWL=1) wrote one - a whole directory, copied recursively, not matched by the glob
+#   3. select the files: the image's own plain-named files, the machine's shared kernel/boot files, and report-trowl/ if
+#      the trowl class of meta-trowl (AGL_TROWL=1) wrote one - a whole directory, copied recursively, not matched by the glob
 #   4. copy them into the partial directory (links resolved; a shared file that already exists must be byte-identical)
 # The partial directory is renamed to the final name later, by nightly-finalize.sh, once every job of the run is done.
 set -euo pipefail
@@ -91,10 +91,10 @@ for f in "${names[@]}"; do
   mv "$dest/$f.tmp" "$dest/$f"
 done
 
-# Scanner report directories, if the scanner wrote one: trowl-report/ (ci/scripts/trowl-scan.sh, AGL_TROWL=1) and
-# vulnscout-report/ (VULNSCOUT_DEPLOY_DIR, AGL_VULNSCOUT=1, written by bitbake itself during the build). Whole directories,
+# Scanner report directories, if the scanner wrote one: report-trowl/ (written by bitbake itself: the class trowl of meta-trowl, AGL_TROWL=1) and
+# report-vulnscout/ (the vulnscout step of the workflow, AGL_VULNSCOUT=1). Whole directories,
 # copied recursively. Marked seen so the "not included" report below does not list them as skipped.
-for report in trowl-report vulnscout-report; do
+for report in report-trowl report-vulnscout; do
   if [ -d "$deploy/$report" ]; then
     mkdir -p "$dest/$report"
     cp -a "$deploy/$report/." "$dest/$report/"

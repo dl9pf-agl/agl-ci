@@ -106,11 +106,11 @@ done
 cp "$stmt" "$dest/$target.provenance.json"
 names+=("$target.provenance.json")
 
-# Scanner report directories, if the scanner wrote one: trowl-report/ (ci/scripts/build.sh, AGL_TROWL=1) and
-# vulnscout-report/ (VULNSCOUT_DEPLOY_DIR, AGL_VULNSCOUT=1, written by bitbake itself during the build). Whole
+# Scanner report directories, if the scanner wrote one: report-trowl/ (written by bitbake itself: the class trowl of meta-trowl, AGL_TROWL=1) and
+# report-vulnscout/ (the vulnscout step of the workflow, AGL_VULNSCOUT=1). Whole
 # directories, not plain-named files, so select_files above never sees them. Copied recursively and every file inside is
 # added to the sums list by its relative path, so it is hashed and verified like every other file of the image.
-for report in trowl-report vulnscout-report; do
+for report in report-trowl report-vulnscout; do
   if [ -d "$deploy/$report" ]; then
     mkdir -p "$dest/$report"
     cp -a "$deploy/$report/." "$dest/$report/"

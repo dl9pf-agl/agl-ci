@@ -108,9 +108,9 @@ jobs:
       AGL_TREE: ${{ github.workspace }}/tree
       KAS_EXEC: kas-container
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
-      AGL_RELEASE: "1"                       # build.sh: release mode (kas provenance, collect the files)
-      AGL_TROWL: "1"                         # build.sh: trowl scan step; release-collect.sh carries trowl-report/ along
-      AGL_VULNSCOUT: "1"                     # build.sh: vulnscout step (kas/local/vulnscout.yml); report-only (AGL_VULNSCOUT_ENFORCE unset)
+      AGL_RELEASE: "1"                       # build.sh: release mode (kas provenance); step `collect`: collect the files
+      AGL_TROWL: "1"                         # kas/feature/trowl.yml: trowl scans inside the build, report-trowl/; report-only
+      AGL_VULNSCOUT: "1"                     # step `scan (vulnscout)` below: report-vulnscout/; report-only
       RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
       RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
       CI_JOB_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
@@ -140,6 +140,21 @@ jobs:
           TARGET: ${{ matrix.target }}
         # --sdk-allowed false: the SDK is not collected into a release yet (release-collect.sh says so), so it is not built either.
         run: agl-ci/ci/scripts/build.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --sdk-allowed false
+      # The next two steps run on the runner, after the build and outside of kas-container: vulnscout needs docker, which the
+      # builder container never gets. They run in this order because the collect step takes the reports with it.
+      - name: scan (vulnscout)
+        if: env.AGL_VULNSCOUT == '1'
+        continue-on-error: true   # a scan never fails the release build: we want every report
+        env:
+          MACHINE: ${{ matrix.machine }}
+          TARGET: ${{ matrix.target }}
+        run: agl-ci/ci/scripts/vulnscout-scan.sh --deploy-dir "$AGL_TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE"
+      - name: collect
+        env:
+          MACHINE: ${{ matrix.machine }}
+          FEATURES: ${{ matrix.features }}
+          TARGET: ${{ matrix.target }}
+        run: agl-ci/ci/scripts/collect.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
       # Only the two small files per image go to GitHub (kilobytes). The images stay on the builder.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

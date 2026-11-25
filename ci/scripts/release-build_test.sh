@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Test of the two release blocks of build.sh ("release kas step" and "release collect step") with stubs for kas_run and docker:
+# Test of the two release blocks ("release kas step" of build.sh and "release collect step" of collect.sh) with stubs for kas_run and docker:
 # it checks WHICH commands a release build issues (flags, mounts, environment) without running kas, bitbake or docker.
 # Run: ci/scripts/release-build_test.sh      The temporary directory it makes is left in place (path printed); remove it yourself.
 #
@@ -8,6 +8,7 @@
 # that build.sh has at that point (TARGET, MACHINE, KASFILES, TREE, ENGINE) and two stub functions that print their arguments.
 set -uo pipefail
 f="${1:-$(dirname "$0")/build.sh}"
+c="${2:-$(dirname "$0")/collect.sh}"   # the collect blocks live in collect.sh, the kas block in build.sh
 t="$(mktemp -d "${TMPDIR:-/tmp}/release-build-test.XXXXXX")"
 echo "test directory: $t"
 fails=0
@@ -15,8 +16,8 @@ ok() { echo "ok:   $*"; }
 bad() { echo "FAIL: $*"; fails=$((fails + 1)); }
 
 kas_step="$(sed -n '/^# --- begin release kas step/,/^# --- end release kas step/p' "$f")"
-collect_step="$(sed -n '/^# --- begin release collect step/,/^# --- end release collect step/p' "$f")"
-[ -n "$kas_step" ] && [ -n "$collect_step" ] || { echo "FAIL: the marker comments of the release blocks are missing in $f" >&2; exit 1; }
+collect_step="$(sed -n '/^# --- begin release collect step/,/^# --- end release collect step/p' "$c")"
+[ -n "$kas_step" ] && [ -n "$collect_step" ] || { echo "FAIL: the marker comments of the release blocks are missing in $f or $c" >&2; exit 1; }
 
 # run_blocks TREE [VAR=value ...]: run both blocks in a clean environment with the given variables; prints what the stubs saw.
 run_blocks() {

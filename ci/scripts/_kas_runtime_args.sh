@@ -38,12 +38,15 @@
 #                       CVE/vulnerability scanner. Which kas/local/ fragment gets added depends on CI, not just this
 #                       flag: with CI=true (every agl-ci job), kas/local/vulnscout-sbom.yml - plain SBOM generation
 #                       only (create-spdx, no docker); the scan itself then runs from the trusted runner side, against
-#                       that SBOM, via ci/scripts/vulnscout-scan.sh (AGL_VULNSCOUT_ENFORCE decides whether a match fails
-#                       the job - see that script). Without CI=true (a developer's own workstation),
+#                       that SBOM, via ci/scripts/vulnscout-scan.sh (the workflow step `scan (vulnscout)`, report-only).
+#                       Without CI=true (a developer's own workstation),
 #                       kas/local/vulnscout.yml - the full bbclass, including its own `docker` calls from inside the
 #                       build: fine on a workstation (the developer already has full access to their own Docker daemon),
 #                       never fine in CI (that would hand the untrusted build environment access to the privileged
 #                       sidecar Docker daemon only the trusted runner is meant to reach - manual chapter 05).
+#   AGL_TROWL        - set to 1: scans every built image with trowl, inside the bitbake build (kas/feature/trowl.yml: meta-trowl
+#                       and OE-Core's sbom-cve-check fragment, no docker). The report is written to
+#                       ${DEPLOY_DIR_IMAGE}/report-trowl. A failed scan only warns; it never fails the build.
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -213,6 +216,9 @@ kas_extra_includes() {
     else
       printf ':kas/local/vulnscout.yml'
     fi
+  fi
+  if [ -n "${AGL_TROWL:-}" ]; then
+    printf ':kas/feature/trowl.yml'
   fi
 }
 

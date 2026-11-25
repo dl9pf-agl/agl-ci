@@ -164,9 +164,9 @@ jobs:
       AGL_SCOPE: ${{ inputs.repo || github.event.repository.name }}
       KAS_EXEC: ${{ inputs.kas_exec }}
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
-      # Nightly only, for now: trowl scan, vulnscout scan (kas/local/vulnscout.yml, build.sh's vulnscout step) and the
-      # collect-into-nightly-staging step. All three are ready for push-pr too (build.sh does not look at the tier), this
-      # just doesn't flip the flags there yet. AGL_VULNSCOUT_ENFORCE stays unset: report-only (manual chapter 13).
+      # Nightly only, for now: the trowl scan (AGL_TROWL: kas/feature/trowl.yml, runs inside the bitbake build), the vulnscout
+      # scan (AGL_VULNSCOUT: step `scan (vulnscout)` below) and the collect-into-nightly-staging step (step `collect`). All
+      # three are ready for push-pr too, this just doesn't flip the flags there yet. The scans are report-only (manual chapter 13).
       AGL_TROWL: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
       AGL_VULNSCOUT: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
       AGL_NIGHTLY: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
@@ -220,6 +220,22 @@ jobs:
           TARGET: ${{ matrix.target }}
           SDK_ALLOWED: ${{ needs.matrix.outputs.tier == 'release' && 'true' || 'false' }}
         run: agl-ci/ci/scripts/build.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET" --sdk-allowed "$SDK_ALLOWED"
+      # The next two steps run on the runner, after the build and outside of kas-container: vulnscout needs docker, which the
+      # builder container never gets. They run in this order because the collect step takes the reports with it.
+      - name: scan (vulnscout)
+        if: needs.matrix.outputs.mode == 'build' && env.AGL_VULNSCOUT == '1'
+        continue-on-error: true   # a scan never fails the job: we want every report (manual chapter 13)
+        env:
+          MACHINE: ${{ matrix.machine }}
+          TARGET: ${{ matrix.target }}
+        run: agl-ci/ci/scripts/vulnscout-scan.sh --deploy-dir "$AGL_TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE"
+      - name: collect
+        if: needs.matrix.outputs.mode == 'build' && env.AGL_NIGHTLY == '1'
+        env:
+          MACHINE: ${{ matrix.machine }}
+          FEATURES: ${{ matrix.features }}
+          TARGET: ${{ matrix.target }}
+        run: agl-ci/ci/scripts/collect.sh --machine "$MACHINE" --features "$FEATURES" --target "$TARGET"
       # Artifact upload is OFF (2026-11-18): images and result directories cost about 230 GB of Actions storage in 18 days. build.sh does not
       # copy the images any more either. To revive, remove the '# ' prefix of this step and of the copy in ci/scripts/build.sh (chapter 13).
       # - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Test of build.sh's "nightly collect step" block, same technique as release-build_test.sh: the block is cut out of
-# build.sh by its marker comments and run in a fresh bash, with a stub docker function - no kas, no real docker. Run:
+# Test of collect.sh's "nightly collect step" block, same technique as release-build_test.sh: the block is cut out of
+# collect.sh by its marker comments and run in a fresh bash, with a stub docker function - no kas, no real docker. Run:
 # ci/scripts/nightly-build_test.sh      The temporary directory it makes is left in place (path printed); remove it yourself.
 set -uo pipefail
-f="${1:-$(dirname "$0")/build.sh}"
+f="${1:-$(dirname "$0")/collect.sh}"
 t="$(mktemp -d "${TMPDIR:-/tmp}/nightly-build-test.XXXXXX")"
 echo "test directory: $t"
 fails=0

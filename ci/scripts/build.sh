@@ -45,75 +45,11 @@ else
 fi
 # --- end release kas step
 
-# --- begin trowl scan step (trowl-build_test.sh runs this block with a stub trowl-scan.sh)
-if [ "${AGL_TROWL:-}" = 1 ]; then
-  # Report-only: a scan failure (tool bug, unsupported image) must not fail the build (trowl-scan.sh explains why/where it writes).
-  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
-  "$ENGINE/trowl-scan.sh" --deploy-dir "$TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE" \
-    || echo "build.sh: WARNING: trowl scan failed or found nothing to scan (report-only, build continues)" >&2
-fi
-# --- end trowl scan step
-
 if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   echo "build.sh: populating SDK for $TARGET"
   # shellcheck disable=SC2046
   kas_run shell "$KASFILES" -c "bitbake -c populate_sdk $TARGET"
 fi
-
-# --- begin vulnscout step (vulnscout-build_test.sh runs this block with a stub vulnscout-scan.sh)
-if [ "${AGL_VULNSCOUT:-}" = 1 ]; then
-  # Runs from here, not as a bitbake task: vulnscout-scan.sh explains why (the real task calls docker itself, from
-  # inside the build). The SPDX file it scans was already written by create-spdx as part of the kas build above
-  # (kas/local/vulnscout-sbom.yml). AGL_VULNSCOUT_ENFORCE is the second, separate switch: unset (default), a match or a
-  # tool failure here is only a warning, same as trowl; set to 1, the failure is let through to actually fail this job.
-  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
-  if ! "$ENGINE/vulnscout-scan.sh" --deploy-dir "$TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE"; then
-    if [ "${AGL_VULNSCOUT_ENFORCE:-}" = 1 ]; then
-      echo "build.sh: vulnscout scan failed or its bar matched and AGL_VULNSCOUT_ENFORCE=1: failing the build" >&2
-      exit 1
-    fi
-    echo "build.sh: WARNING: vulnscout scan failed or its bar matched (report-only; set AGL_VULNSCOUT_ENFORCE=1 to make this fail the build)" >&2
-  fi
-fi
-# --- end vulnscout step
-
-# --- begin release collect step (release-build_test.sh runs this block with stubs for kas_run and docker)
-if [ "${AGL_RELEASE:-}" = 1 ]; then
-  # Collect the release files of this image (release-collect.sh explains what and why). It must run in a container: this script
-  # runs in the runner container, which cannot enter the cache directory (root:root 0700), while the sidecar's Docker daemon
-  # sees it. So: docker run on that daemon, as root, with the builder image (it has bash and coreutils), mounting
-  #   the build tree (read-only), this ci/scripts directory (read-only), the release staging area (read-write) and the small-file
-  #   directory (read-write; the workflow uploads it). The workspace has the same path in the runner and in the sidecar, and the
-  #   cache directory is mounted at the same path in both, so the same paths work on both sides.
-  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
-  engine="$ENGINE"   # this ci/scripts directory
-  staging="${RELEASE_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/staging/release}"
-  small="$TREE/build/release-small"
-  mkdir -p "$small"
-  docker run --rm --user 0 \
-    -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$staging:$staging" -v "$small:$small" \
-    -e AGL_TREE="$TREE" -e RELEASE_STAGING="$staging" -e RELEASE_BRANCH -e RELEASE_VERSION \
-    -e RELEASE_SMALL_DIR="$small" \
-    --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
-    "$engine/release-collect.sh" --machine "$MACHINE" --target "$TARGET"
-fi
-# --- end release collect step
-
-# --- begin nightly collect step (nightly-build_test.sh runs this block with a stub for docker)
-if [ "${AGL_NIGHTLY:-}" = 1 ]; then
-  # Same reason as the release collect step above: nightly-collect.sh must run as root, inside a container, on the sidecar's
-  # Docker daemon, because this job cannot enter the cache directory itself.
-  # shellcheck disable=SC2153
-  engine="$ENGINE"
-  nightly="${NIGHTLY_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/nightly}"
-  docker run --rm --user 0 \
-    -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$nightly:$nightly" \
-    -e AGL_TREE="$TREE" -e NIGHTLY_STAGING="$nightly" -e NIGHTLY_DATE -e AGL_SCOPE \
-    -e NIGHTLY_RUN_ID="${GITHUB_RUN_ID:-local}" \
-    --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
-    "$engine/nightly-collect.sh" --machine "$MACHINE" --target "$TARGET" --repo "$AGL_SCOPE"
-fi
-# --- end nightly collect step
 
 # --- Collecting the build output for the artifact upload: OFF (2026-11-18) ---------------------------------------------------------
 # Why off: the images made about 232 GB of Actions storage in 18 days (chapter 13, "Build artifacts are off"). The upload step in
