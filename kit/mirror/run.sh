@@ -33,7 +33,7 @@ rel=(); for d in staging release; do mkdir -p "$CACHE_DIR/$d"; rel+=(-v "$CACHE_
 net=(-p "$PORT:8080"); [ -z "${MIRROR_NETWORK:-}" ] || net=(--network "$MIRROR_NETWORK")   # host network: listens on 8080
 "$E" run -d --name "$NAME" --restart unless-stopped "${net[@]}" "${tls_port[@]}" \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-  -v "$here/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$here/locations.conf:/etc/nginx/mirror/locations.conf:ro" "${tls[@]}" \
+  -v "$here/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$here/locations.conf:/etc/nginx/mirror/locations.conf:ro" -v "$here/index.html:/srv/mirror/index.html:ro" "${tls[@]}" \
   -v "$CACHE_DIR/dl:/srv/mirror/dl:ro" -v "$CACHE_DIR/sstate:/srv/mirror/sstate:ro" "${git[@]}" "${rel[@]}" \
   "$IMAGE" >/dev/null
 echo "mirror up: http://$(hostname -f 2>/dev/null || hostname):$PORT/dl/ and /sstate/ (logs: $E logs $NAME)"

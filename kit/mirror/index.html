@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AGL CI downloads</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+  dt { font-weight: 600; margin-top: 1rem; }
+  dd { margin: 0; }
+</style>
+</head>
+<body>
+<h1>AGL CI downloads</h1>
+<dl>
+  <dt><a href="/release/">release/</a></dt>
+  <dd>Released images, by release line and version: <code>release/&lt;branch&gt;/&lt;version&gt;/</code>. Signed by the CI and by a release engineer; check <code>SHA256SUMS</code> and its signatures.</dd>
+  <dt><a href="/staging/">staging/</a></dt>
+  <dd>Releases that were just built and are waiting for the engineer's signature. Not verified yet: do not use them.</dd>
+</dl>
+<!-- Add a folder for people here and, if it is a new mount, in kit/mirror/run.sh and locations.conf. The build caches are not listed on purpose. -->
+</body>
+</html>
