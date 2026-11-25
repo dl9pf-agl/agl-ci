@@ -73,6 +73,22 @@ if [ "${AGL_RELEASE:-}" = 1 ]; then
 fi
 # --- end release collect step
 
+# --- begin nightly collect step (nightly-build_test.sh runs this block with a stub for docker)
+if [ "${AGL_NIGHTLY:-}" = 1 ]; then
+  # Same reason as the release collect step above: nightly-collect.sh must run as root, inside a container, on the sidecar's
+  # Docker daemon, because this job cannot enter the cache directory itself.
+  # shellcheck disable=SC2153
+  engine="$ENGINE"
+  nightly="${NIGHTLY_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/nightly}"
+  docker run --rm --user 0 \
+    -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$nightly:$nightly" \
+    -e AGL_TREE="$TREE" -e NIGHTLY_STAGING="$nightly" -e NIGHTLY_DATE -e AGL_SCOPE \
+    -e NIGHTLY_RUN_ID="${GITHUB_RUN_ID:-local}" \
+    --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
+    "$engine/nightly-collect.sh" --machine "$MACHINE" --target "$TARGET" --repo "$AGL_SCOPE"
+fi
+# --- end nightly collect step
+
 # --- Collecting the build output for the artifact upload: OFF (2026-11-18) ---------------------------------------------------------
 # Why off: the images made about 232 GB of Actions storage in 18 days (chapter 13, "Build artifacts are off"). The upload step in
 # .github/workflows/layer-ci.yml is off too; the two belong together. To revive both, remove the '# ' prefix of the lines below

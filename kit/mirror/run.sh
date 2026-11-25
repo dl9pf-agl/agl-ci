@@ -28,8 +28,9 @@ if [ -n "${TLS_CERT:-}" ] || [ -n "${TLS_KEY:-}" ]; then
   [ -n "${MIRROR_NETWORK:-}" ] || tls_port=(-p "${TLS_PORT:-8443}:8443")
 fi
 git=(); [ ! -d "$CACHE_DIR/git" ] || git=(-v "$CACHE_DIR/git:/srv/mirror/git:ro")   # bare layer mirrors, if git-mirrors.sh made any
-# releases (kit/release/promote.sh): staging/release = pulled from the builder, not verified; release = verified and promoted. Both public.
-rel=(); for d in staging release; do mkdir -p "$CACHE_DIR/$d"; rel+=(-v "$CACHE_DIR/$d:/srv/mirror/$d:ro"); done
+# releases (kit/release/promote.sh): staging/release = pulled from the builder, not verified; release = verified and promoted.
+# nightly = nightly builds (kit/release/cleanup-nightly.sh prunes them), never verified. All three public.
+rel=(); for d in staging release nightly; do mkdir -p "$CACHE_DIR/$d"; rel+=(-v "$CACHE_DIR/$d:/srv/mirror/$d:ro"); done
 net=(-p "$PORT:8080"); [ -z "${MIRROR_NETWORK:-}" ] || net=(--network "$MIRROR_NETWORK")   # host network: listens on 8080
 "$E" run -d --name "$NAME" --restart unless-stopped "${net[@]}" "${tls_port[@]}" \
   --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
