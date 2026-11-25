@@ -269,6 +269,11 @@ requests to `agl-fork`, everything else to `agl-pr`); 4 nginx container on this 
 (M13b); 7 drill from the mirror alone (empty `DL_DIR` and sstate, `BB_ALLOWED_NETWORKS`; done, `drill.sh --mode mirror`); 8 pull sync to a separate
 web host, pruning and monitoring (M11), git mirrors (M6), the other layer repos (M18), off-site copy (M16).
 
+### The staging area of a release (added 2026-11)
+The same pull carries one more area: `AREAS=staging` copies `staging/` of every build host (`kit/mirror/rsyncd.sh` mounts it when the directory exists) into the
+download server's tree, where the images of one release built on different hosts are merged. A promoted release is copied to `release/` and its staging copy is removed
+after seven days; `release-done.txt` (rsync exclude file) keeps the pull from fetching it again. See chapter 19, section 5.
+
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the

@@ -36,6 +36,7 @@ The chapters keep their numbers because scripts, skills and other chapters cite 
 | 13 | [Layer CI engine](13-layer-ci-engine.md) | Build tree, matrices, scope chain, kas execution modes |
 | 14 | [Hash equivalence and PR servers](14-hashserv-and-prserv.md) | Which server where, read-only vs read-write, when a PR service is needed |
 | 15 | [Outage drill, mirrors, open items](15-outage-drill-and-mirrors.md) | Upstream-outage tiers, offline drill, mirror decisions, folder growth, tracked missing items |
+| 19 | [Release process (AGL images)](19-release-process.md) | Pins file and tag, `release.yml`, combine on the download server, signatures, how users check a release |
 
 ### Part E Adoption
 | # | Chapter | Content |

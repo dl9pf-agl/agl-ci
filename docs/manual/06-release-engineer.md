@@ -80,3 +80,11 @@ tag signature, but no image-level engineer signature; note this in the release n
 
 ## 9 Dry-run before the first release
 Sign a `test-*` image with the real token, verify with `--release`, then revoke that test key.
+
+## 10 Countersigning a release of the AGL images
+The AGL images (chapter 19) are not container images: the engineer signs the file `SHA256SUMS` of the release, and the signature is a **commit** in agl-ucb,
+`kas/releases/<branch>_<version>.SHA256SUMS.<id>.sig`. Steps (details and the CI-signature check in chapter 19, section 6):
+download `SHA256SUMS` and `SHA256SUMS.bundle` from the GitHub release of the tag; `cosign verify-blob` them with the CI identity; sign with the YubiKey
+(`cosign sign-blob --sk --output-signature <file> SHA256SUMS`); open a PR adding that one file; after the merge the download server counts it and promotes.
+The key must be in `keys/release/<id>.pub` and not in `REVOKED.txt` (same files as above). The rehearsal used a throw-away key (`rehearsal`, `--key`); the dry run
+with the real token (section 9) is still to do for this path.

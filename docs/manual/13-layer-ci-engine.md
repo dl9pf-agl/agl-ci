@@ -92,6 +92,13 @@ image, which contains kas and the Yocto host tools). Everything goes through `ka
 
 `mode` input: `build` (default) or `drill` (chapter 15); `pull_request` always runs `build`.
 
+## Release mode
+`release.yml` (chapter 19) reuses `ci/scripts/build.sh` for the images of the tier `release`: with `AGL_RELEASE=1` the script builds with
+`kas build --provenance mode=min --target <target>`, then runs `release-collect.sh` in a container on the sidecar's Docker daemon (as root, because the
+cache directory is not reachable from the runner) to copy the files of the image into the host's `staging/release/<branch>/<version>/`. The matrix job
+copies the release pins file over `kas/pins.yml` in its throw-away tree and takes the images of **all** layer repos (no `AGL_SCOPE`). Every other caller leaves
+`AGL_RELEASE` unset and the script behaves as before (`release-build_test.sh` proves it).
+
 ## Build artifacts are off
 Since 2026-11-18 the `build` job uploads no workflow artifact: the `upload-artifact` step in `layer-ci.yml` is commented out, and
 `ci/scripts/build.sh` no longer copies `tmp/deploy/images` (and `sdk`) into `build/artifacts`. Reason: 232 GB of images and logs
