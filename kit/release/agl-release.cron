@@ -6,3 +6,7 @@
 # To switch promotion to manual, put RELEASE_PROMOTE=manual in /etc/agl-release/promote.env; then run kit/release/promote.sh <branch> <version> by hand.
 */5 * * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh
 17 3 * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh cleanup
+# Nightly builds: never signed, never promoted - the pull IS the publish, so only two lines, a separate lock from the release
+# chain above (the two must not block each other). Daily: remove nightly directories older than NIGHTLY_KEEP_DAYS (7).
+*/5 * * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly
+22 3 * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly cleanup

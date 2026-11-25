@@ -49,6 +49,7 @@ jobs:
       pool: ${{ steps.gen.outputs.pool }}
       builder: ${{ steps.gen.outputs.builder }}
       count: ${{ steps.gen.outputs.count }}
+      nightly_date: ${{ steps.gen.outputs.nightly_date }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +115,9 @@ jobs:
             json="$(AGL_TREE=$PWD/tree AGL_SCOPE=$REPO python3 agl-ci/ci/scripts/_matrix.py --json "$tier")"
             echo "matrix=$json"
             echo "count=$(python3 -c 'import json,sys; print(len(json.loads(sys.argv[1])["include"]))' "$json")"
+            # One date-time key per run, shared by every matrix job of this run (nightly-collect.sh/nightly-finalize.sh), so
+            # all of this run's images land in the same dated folder on the download server.
+            echo "nightly_date=$(date -u +%Y-%m-%d-%H%M)"
           } >> "$GITHUB_OUTPUT"
           # What this run resolved to, in the format of kas/pins.yml: meta-agl, meta-agl-demo and meta-agl-devel float on their
           # branch, so this is their written-out pin (a release stores it, chapter 13).
@@ -160,6 +164,11 @@ jobs:
       AGL_SCOPE: ${{ inputs.repo || github.event.repository.name }}
       KAS_EXEC: ${{ inputs.kas_exec }}
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
+      # Nightly only, for now: the collect-into-nightly-staging step. Ready for push-pr too (build.sh does not look at the
+      # tier), this just doesn't flip the flag there yet.
+      AGL_NIGHTLY: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
+      NIGHTLY_DATE: ${{ needs.matrix.outputs.nightly_date }}
+      NIGHTLY_RUN_ID: ${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -253,9 +262,38 @@ jobs:
       - name: yocto-check-layer
         run: agl-ci/ci/scripts/check-layer.sh
 
+  # Rename the nightly's partial directory to its final name once every build job of the run is done (nightly-finalize.sh),
+  # so the download-server pull never sees a half-written nightly. Same arrangement as release.yml's finalize job: it must
+  # run as root in a container on the sidecar's Docker daemon, because this job cannot enter the cache directory itself.
+  nightly-finalize:
+    needs: [matrix, build]
+    if: ${{ !cancelled() && needs.matrix.outputs.tier == 'nightly' && needs.matrix.outputs.count != '0' && needs.build.result == 'success' }}
+    runs-on: [self-hosted, "${{ needs.matrix.outputs.pool }}"]
+    permissions: { contents: read }
+    env:
+      KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
+      NIGHTLY_DATE: ${{ needs.matrix.outputs.nightly_date }}
+      NIGHTLY_RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: agl-ci
+          persist-credentials: false
+      - name: finalize
+        run: |
+          set -euo pipefail
+          engine="$PWD/agl-ci/ci/scripts"
+          nightly="${NIGHTLY_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/nightly}"
+          docker run --rm --user 0 \
+            -v "$engine:$engine:ro" -v "$nightly:$nightly" \
+            -e NIGHTLY_STAGING="$nightly" -e NIGHTLY_DATE -e NIGHTLY_RUN_ID \
+            --entrypoint /bin/bash "$KAS_CONTAINER_IMAGE" "$engine/nightly-finalize.sh"
+
   # The only required status check of a caller repo.
   result:
-    needs: [matrix, build, check-layer]
+    needs: [matrix, build, check-layer, nightly-finalize]
     if: always()
     runs-on: ubuntu-24.04
     permissions: {}
