@@ -40,14 +40,17 @@ if [ "$rc" -eq 0 ]; then ok "a normal collect runs"; else bad "collect failed: $
 if [ -f "$dest/agl-image-minimal-$M.ext4.xz" ] && [ -f "$dest/bzImage-$M.bin" ]; then ok "the image's own file and the shared kernel are collected"; else bad "files missing in $dest"; fi
 if [ ! -e "$dest/other-image-$M.ext4.xz" ] && [ ! -e "$dest/junk" ]; then ok "another image's file and a plain directory are not collected"; else bad "unwanted entries collected"; fi
 
-# 2. trowl-report/ (ci/scripts/trowl-scan.sh), a whole directory: collected recursively.
+# 2. trowl-report/ (ci/scripts/trowl-scan.sh) and vulnscout-report/ (VULNSCOUT_DEPLOY_DIR), both whole directories:
+#    collected recursively.
 mkdeploy "$t/tree2" agl-ivi-demo-flutter kernel-A
-mkdir -p "$t/tree2/build/tmp/deploy/images/$M/trowl-report"
+mkdir -p "$t/tree2/build/tmp/deploy/images/$M/trowl-report" "$t/tree2/build/tmp/deploy/images/$M/vulnscout-report"
 echo '<html></html>' > "$t/tree2/build/tmp/deploy/images/$M/trowl-report/index.html"
 echo '{}' > "$t/tree2/build/tmp/deploy/images/$M/trowl-report/report.json"
+echo 'summary' > "$t/tree2/build/tmp/deploy/images/$M/vulnscout-report/summary.adoc"
 out="$(collect "$t/tree2" agl-ivi-demo-flutter)"; rc=$?
 dest2="$t/stage/.2026-11-26-0300.partial/meta-agl/$M/deploy/images/$M"
 if [ -f "$dest2/trowl-report/index.html" ] && [ -f "$dest2/trowl-report/report.json" ]; then ok "trowl-report/ is collected recursively"; else bad "trowl-report/ missing: $out"; fi
+if [ -f "$dest2/vulnscout-report/summary.adoc" ]; then ok "vulnscout-report/ is collected recursively"; else bad "vulnscout-report/ missing: $out"; fi
 
 # 3. A shared kernel file that disagrees with what is already collected: refused.
 mkdeploy "$t/tree3" third-image kernel-B

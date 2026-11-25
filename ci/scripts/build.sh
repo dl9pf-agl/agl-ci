@@ -60,6 +60,23 @@ if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   kas_run shell "$KASFILES" -c "bitbake -c populate_sdk $TARGET"
 fi
 
+# --- begin vulnscout step (vulnscout-build_test.sh runs this block with a stub vulnscout-scan.sh)
+if [ "${AGL_VULNSCOUT:-}" = 1 ]; then
+  # Runs from here, not as a bitbake task: vulnscout-scan.sh explains why (the real task calls docker itself, from
+  # inside the build). The SPDX file it scans was already written by create-spdx as part of the kas build above
+  # (kas/local/vulnscout-sbom.yml). AGL_VULNSCOUT_ENFORCE is the second, separate switch: unset (default), a match or a
+  # tool failure here is only a warning, same as trowl; set to 1, the failure is let through to actually fail this job.
+  # shellcheck disable=SC2153  # ENGINE is assigned in _kas_runtime_args.sh, which this script sources
+  if ! "$ENGINE/vulnscout-scan.sh" --deploy-dir "$TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE"; then
+    if [ "${AGL_VULNSCOUT_ENFORCE:-}" = 1 ]; then
+      echo "build.sh: vulnscout scan failed or its bar matched and AGL_VULNSCOUT_ENFORCE=1: failing the build" >&2
+      exit 1
+    fi
+    echo "build.sh: WARNING: vulnscout scan failed or its bar matched (report-only; set AGL_VULNSCOUT_ENFORCE=1 to make this fail the build)" >&2
+  fi
+fi
+# --- end vulnscout step
+
 # --- begin release collect step (release-build_test.sh runs this block with stubs for kas_run and docker)
 if [ "${AGL_RELEASE:-}" = 1 ]; then
   # Collect the release files of this image (release-collect.sh explains what and why). It must run in a container: this script
