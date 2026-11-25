@@ -108,9 +108,10 @@ images stay in the sstate and in the build directory of the runner; the validate
 job log. To revive: remove the `# ` prefix of the step and of the copy in `build.sh` (both carry a note), and set the nightly
 `retention-days` to 7 days (done in the commented step).
 
-## Nightly publishing and trowl (2026-11-25)
+## Nightly publishing (2026-11-25)
 Nightly images bypass GitHub Actions storage entirely instead of reviving it: `AGL_NIGHTLY=1` (set by `layer-ci.yml`'s `build`
-job for the nightly tier only) makes `build.sh` call `ci/scripts/nightly-collect.sh`, which copies the image into
+job for the nightly tier only) makes the step `collect` (`ci/scripts/collect.sh`, after the build and the scan step) call
+`ci/scripts/nightly-collect.sh`, which copies the image into
 `NIGHTLY_STAGING/.<date>.partial/<repo>/<machine>/deploy/images/<machine>/` on the builder's own cache directory (same
 root-in-a-container arrangement as `release-collect.sh`, same cache-directory permission reason). A new `nightly-finalize` job
 renames `.partial` to `<date>` once every build job of the run is done, so the download server's pull (`kit/mirror/pull-sync.sh`,
@@ -120,42 +121,42 @@ apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHT
 `kit/release/cleanup-nightly.sh`, same cron chain; the builder's own copy is not pruned automatically (same as a staged, never
 promoted release - cleaned up there, by hand).
 
-Also new: `ci/scripts/trowl-scan.sh` (gated by `AGL_TROWL=1`, set for nightly and release, not yet for push-pr - the code path
-is ready, the workflow just doesn't flip the flag there yet) runs trowl (`github.com/corefense-security/trowl`, pinned by tag
-in `docker/pins.env`, verified by cosign keyless identity before every run) against the built image right after `kas build`,
-writing `trowl-report/` directly into `tmp/deploy/images/<machine>/` - which both collect scripts then carry along as a plain
-directory copy, so it travels with the image for free. Report-only: a scan failure never fails the build. No `--sbom` yet: no
-matrix entry carries the `agl-create-spdx` kas feature, so trowl runs image-only (hardening + CVE, no VEX/SBOM-diff). Trowl is
-pre-stable (preview tags only as of 2026-11-25); expect `docker/pins.env`'s `TROWL_REF` to need bumping often early on.
+## Scans: trowl in the build, vulnscout beside it (2026-11-26)
+Two independent scanners write a report next to every image of the nightly and release builds. Neither fails a build: the reports
+are what we want, so a scan failure is a warning. Both report directories sit in `tmp/deploy/images/<machine>/`, and both collect
+scripts (`release-collect.sh`, `nightly-collect.sh`) carry them along as plain directory copies; the release one also lists every
+file in the per-image `SHA256SUMS`, so the reports are signed with the release.
 
-A second, independent scanner, VulnScout (`github.com/savoirfairelinux/meta-vulnscout`), runs from the runner side too,
-like trowl, but for a security reason, not convenience: VulnScout's own bitbake task (`vulnscout_ci`) calls `docker`
-itself, from inside the bitbake task - fine on a developer's own workstation (their own Docker daemon already), never
-fine in CI, where that would hand the untrusted build environment access to the privileged sidecar Docker daemon that
-only the trusted runner is meant to reach (chapter 05: a job that reaches the sidecar can read the raw host disk via a
-nested privileged container). So CI never inherits the `vulnscout` bbclass at all.
+| | report directory | where it runs | switch |
+|---|---|---|---|
+| trowl | `report-trowl/<image>/` | inside the bitbake build (class `trowl` of meta-trowl), no docker | `AGL_TROWL=1` adds `kas/feature/trowl.yml` |
+| VulnScout | `report-vulnscout/` | workflow step `scan (vulnscout)` on the runner, after the build, outside of kas-container | `AGL_VULNSCOUT=1` |
 
-`AGL_VULNSCOUT=1` picks a DIFFERENT kas fragment depending on `CI` (`ci/scripts/_kas_runtime_args.sh`'s
-`kas_extra_includes`): with `CI=true` (every agl-ci job), `kas/local/vulnscout-sbom.yml` - plain `create-spdx`, no
-docker, writing the SPDX file bitbake already uses for that purpose; without it (a developer's own workstation),
-`kas/local/vulnscout.yml` - the full bbclass, docker and all, safe there because it is the developer's own daemon.
-`build.sh`'s vulnscout step then runs `ci/scripts/vulnscout-scan.sh` from the runner (same trust level and `DOCKER_HOST`
-as trowl-scan.sh), scanning that SPDX file with the pinned `VULNSCOUT_IMAGE` (`docker/pins.env`, digest-pinned: a plain
-Docker Hub image, no keyless-signing identity to cosign-verify against, unlike trowl's). It writes
-`vulnscout-report/` next to the image, the same way trowl does - both collect scripts carry either/both along,
-whichever exists.
+**trowl.** `kas/feature/trowl.yml` (in meta-agl, pointer in agl-ucb, commit of meta-trowl pinned in agl-ucb's `kas/pins.yml`) adds
+meta-trowl and OE-Core's `core/yocto/sbom-cve-check` fragment and sets `TROWL_REPORT_DIR = "${DEPLOY_DIR_IMAGE}/report-trowl"`.
+`_kas_runtime_args.sh`'s `kas_extra_includes` adds the feature when `AGL_TROWL` is set. The class scans each finished image with the
+SBOM of the fragment; trowl itself is a native recipe built from checksummed downloads, so there is no docker, no cosign and no
+registry pull. The scan only warns when it fails (a failed `debugfs` showed as a warning). What can still fail the build is fetching
+its inputs: `trowl-native` is a build dependency of every image, and the two CVE database recipes of the OE-Core fragment clone
+`github.com` with `SRCREV = AUTOREV`. A temporary wrapper in `meta-agl-bsp/trowl/` works around a PATH gap of the class (it does not
+put `/sbin` of the native components on the scan PATH, where `debugfs` lives); remove it when meta-trowl fixes that.
+Because meta-trowl is a repo of the build, `release-check.py` needs it in the release pins file: it is, because
+`prepare-release.sh` locks every `kas/feature/*.yml` of agl-ucb.
 
-Two independent switches, not one, because VulnScout's severity bar and whether a match blocks anything are different
-decisions:
-- `VULNSCOUT_MATCH_CONDITION` (a plain shell variable read by vulnscout-scan.sh, default `"cvss >= 11"`) - CVSS caps at
-  10.0, so this never matches; the scan still runs and writes every report (all six built-in templates, always). A tier
-  that wants a real bar sets the variable before calling the script, e.g. `cvss >= 9.0 and affected == true`.
-- `AGL_VULNSCOUT_ENFORCE` (build.sh var) decides whether a match or a tool failure is allowed to fail the job at all.
-  Unset everywhere today: `build.sh` swallows it into a warning, same report-only shape as trowl, regardless of what
-  the bar is set to. Set to `1` for a given tier, the failure is let through.
-This mirrors the "none = report only" convention of agl-ci's own grype bars (chapter 09) - a real bar can be measured on
-any tier (PR, nightly, weekly, release) without that tier being able to block anyone until enforcement is deliberately
-turned on for it too.
+**VulnScout** (`github.com/savoirfairelinux/meta-vulnscout`) runs from the runner, for a security reason: its own bitbake task
+(`vulnscout_ci`) calls `docker` from inside the task, which would hand the untrusted build environment the privileged sidecar Docker
+daemon (chapter 05: a job that reaches the sidecar can read the raw host disk via a nested privileged container). So CI never
+inherits the `vulnscout` bbclass. `AGL_VULNSCOUT=1` picks a different kas fragment depending on `CI`: with `CI=true`,
+`kas/local/vulnscout-sbom.yml` (plain `create-spdx`, no docker); without it (a developer's workstation), `kas/local/vulnscout.yml`
+(the full bbclass, safe there because it is the developer's own daemon). The workflow step `scan (vulnscout)` then runs
+`ci/scripts/vulnscout-scan.sh` against that SPDX file with the pinned `VULNSCOUT_IMAGE` (`docker/pins.env`, digest-pinned: a plain
+Docker Hub image, no keyless-signing identity to verify). The step has `continue-on-error: true`. It must come before the
+`collect` step, which takes the report along; that is why `collect.sh` is a step of its own and not part of `build.sh`.
+`VULNSCOUT_MATCH_CONDITION` (a shell variable of `vulnscout-scan.sh`, default `"cvss >= 11"`) is the severity bar; CVSS caps at 10.0,
+so the default never matches and the scan still writes every report (all six built-in templates). A tier that wants a real bar sets
+it, e.g. `cvss >= 9.0 and affected == true`; the step is report-only whatever the bar is.
+
+Untested together: `AGL_TROWL` and `AGL_VULNSCOUT` in one build (both want an SPDX file of the image; the names may collide).
 
 ## Trust rules
 ### Tier and pool

@@ -43,8 +43,8 @@ if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'no img-qemux86-64.spdx.json'; then 
 mkdir -p "$t/ok/deploy"; echo '{"spdx":1}' > "$t/ok/deploy/img-$M.spdx.json"
 out="$(run ok)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "a scan with a real SPDX file succeeds"; else bad "scan failed: $out"; fi
-if [ -d "$t/ok/deploy/vulnscout-report" ]; then ok "the report directory is created"; else bad "report directory missing"; fi
-if echo "$out" | grep -q -- "DOCKER run --rm -v $t/ok/deploy:$t/ok/deploy:ro -v $t/ok/deploy/vulnscout-report:/scan/outputs sflinux/vulnscout@sha256:fake /scan/src/entrypoint.sh --project agl --variant img-$M --add-spdx $t/ok/deploy/img-$M.spdx.json --match-condition cvss >= 11"; then
+if [ -d "$t/ok/deploy/report-vulnscout" ]; then ok "the report directory is created"; else bad "report directory missing"; fi
+if echo "$out" | grep -q -- "DOCKER run --rm -v $t/ok/deploy:$t/ok/deploy:ro -v $t/ok/deploy/report-vulnscout:/scan/outputs sflinux/vulnscout@sha256:fake /scan/src/entrypoint.sh --project agl --variant img-$M --add-spdx $t/ok/deploy/img-$M.spdx.json --match-condition cvss >= 11"; then
   ok "docker run has the mounts, the SPDX file and the default match condition"
 else bad "wrong docker call: $out"; fi
 if echo "$out" | grep -q -- '--report all_assessments.adoc' && echo "$out" | grep -q -- '--report vulnerability_summary.txt'; then
