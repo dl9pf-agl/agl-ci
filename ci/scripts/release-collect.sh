@@ -106,6 +106,18 @@ done
 cp "$stmt" "$dest/$target.provenance.json"
 names+=("$target.provenance.json")
 
+# trowl-report/, if the trowl scan step wrote one (ci/scripts/build.sh, AGL_TROWL=1): a whole directory, not a plain-named
+# file, so select_files above never sees it. Copied recursively and every file inside is added to the sums list by its
+# relative path, so it is hashed and verified like every other file of the image.
+if [ -d "$deploy/trowl-report" ]; then
+  mkdir -p "$dest/trowl-report"
+  cp -a "$deploy/trowl-report/." "$dest/trowl-report/"
+  while IFS= read -r -d '' f; do
+    names+=("trowl-report/${f#"$deploy/trowl-report/"}")
+  done < <(find "$deploy/trowl-report" -type f -print0)
+  seen[trowl-report]=trowl
+fi
+
 # 5. The sums file of this image: one line per file, paths relative to this directory, so `sha256sum -c <target>.SHA256SUMS` works
 #    from there. It lists the statement too, which ties the statement to the files. It does not list itself.
 ( cd "$dest" && printf '%s\n' "${names[@]}" | LC_ALL=C sort | xargs -d '\n' sha256sum -- ) > "$dest/$target.SHA256SUMS.tmp"

@@ -164,8 +164,9 @@ jobs:
       AGL_SCOPE: ${{ inputs.repo || github.event.repository.name }}
       KAS_EXEC: ${{ inputs.kas_exec }}
       KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
-      # Nightly only, for now: the collect-into-nightly-staging step. Ready for push-pr too (build.sh does not look at the
-      # tier), this just doesn't flip the flag there yet.
+      # Nightly only, for now: trowl scan (build.sh's trowl scan step) and the collect-into-nightly-staging step. Both are
+      # ready for push-pr too (build.sh does not look at the tier), this just doesn't flip the flag there yet.
+      AGL_TROWL: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
       AGL_NIGHTLY: ${{ needs.matrix.outputs.tier == 'nightly' && '1' || '' }}
       NIGHTLY_DATE: ${{ needs.matrix.outputs.nightly_date }}
       NIGHTLY_RUN_ID: ${{ github.run_id }}
