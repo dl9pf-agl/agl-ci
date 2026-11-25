@@ -10,7 +10,6 @@
 #   RELEASE_STAGING   the release area of the cache directory, e.g. /srv/agl-cache/staging/release (created if missing)
 #   RELEASE_BRANCH    the release line, e.g. vimba (lower case letters)
 #   RELEASE_VERSION   e.g. 22.0.2
-#   RELEASE_RUN_ID    id of this release run (default: GITHUB_RUN_ID, else "local"); all images of one release must carry the same id
 #   RELEASE_SMALL_DIR where to put the small files for the upload to the attest job (default: $AGL_TREE/build/release-small)
 #
 # Why this is a separate script: the runner container cannot enter the cache directory (root:root 0700), so build.sh runs this
@@ -19,12 +18,15 @@
 #
 # Flow, in the order it runs:
 #   1. check the arguments and the environment (names end up in paths, so they are strict)
-#   2. guard the release directory           (final directory exists: refuse; partial directory of another run: refuse)
+#   2. guard                                 (the image was already collected here: refuse)
 #   3. select the files                      (the image's own plain-named files, plus the machine's shared kernel and boot files)
-#   4. copy them into the partial directory  (links resolved; a shared file that already exists must be byte-identical)
+#   4. copy them into the release directory  (links resolved; a shared file that already exists must be byte-identical)
 #   5. write <target>.SHA256SUMS             (hashes of everything of this image, including its kas statement)
 #   6. copy the two small files to RELEASE_SMALL_DIR (the sums and the statement, for the artifact upload)
-# The partial directory is renamed to the final name later, by the finalize job, after the signatures are in place.
+# The images of one release may be built on DIFFERENT hosts: each host collects its own images into its own staging area, and the
+# download server pulls and merges them (kit/mirror/pull-sync.sh). The signed files (sums of all images, signatures, pins) come
+# later from the attest job, as an asset of the GitHub release of the tag; kit/release/promote.sh unpacks them into the merged tree,
+# verifies everything and promotes. Nothing here is signed yet, which is fine: staging is public and says so (STAGING.txt).
 set -euo pipefail
 
 die() { echo "release-collect: $*" >&2; exit 1; }
@@ -42,7 +44,6 @@ tree="${AGL_TREE:?AGL_TREE is not set}"
 staging="${RELEASE_STAGING:?RELEASE_STAGING is not set}"
 branch="${RELEASE_BRANCH:?RELEASE_BRANCH is not set}"
 version="${RELEASE_VERSION:?RELEASE_VERSION is not set}"
-run_id="${RELEASE_RUN_ID:-${GITHUB_RUN_ID:-local}}"
 small="${RELEASE_SMALL_DIR:-$tree/build/release-small}"
 # Names go into paths and into glob patterns below: only plain names are accepted.
 [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --machine: '$machine'"
@@ -52,20 +53,15 @@ small="${RELEASE_SMALL_DIR:-$tree/build/release-small}"
 
 deploy="$tree/build/tmp/deploy/images/$machine"        # what bitbake deployed for this machine in this job
 stmt="$tree/build/attestation/kas-build.provenance.json" # written by kas build --provenance
-final="$staging/$branch/$version"                       # the finished release directory (exists only after finalize)
-part="$staging/$branch/.$version.partial"               # where the jobs of one run collect; hidden: the rsync daemon never offers dotfiles
+part="$staging/$branch/$version"                        # the release directory of this host: the images collected HERE
 dest="$part/$machine/deploy/images/$machine"            # the public layout: <machine>/deploy/images/<machine>/
 [ -d "$deploy" ] || die "no deploy directory $deploy (did the build run?)"
 [ -f "$stmt" ] || die "no kas statement $stmt (build with --provenance)"
 
-# 2. Guards. A release is immutable: a finished directory of this version means this release exists already. A partial directory
-#    that belongs to another run (different run id) means an earlier attempt failed halfway; mixing two runs would put old and new
-#    files side by side, so stop and let a person decide (nothing is deleted automatically).
-#    These are only checks; nothing is created before the files are selected (step 3), so a refused call leaves nothing behind.
-[ ! -e "$final" ] || die "release $branch/$version already exists in $staging (releases are immutable; use a new version)"
-if [ -e "$part/.run-id" ] && [ "$(cat "$part/.run-id")" != "$run_id" ]; then
-  die "$part belongs to run $(cat "$part/.run-id"), not $run_id: an earlier attempt is incomplete; remove it by hand if it is dead"
-fi
+# 2. Guard: an image is collected once. The sums file is written last, so its existence means a complete earlier collect; files
+#    without it are the leftover of an attempt that failed halfway, and step 4 only accepts them if they are byte-identical.
+#    Nothing is created before the files are selected in step 3, so a refused call leaves nothing behind.
+[ ! -e "$dest/$target.SHA256SUMS" ] || die "$target was already collected for $machine in this release (releases are immutable; use a new version)"
 
 # 3. Select the files. All patterns are relative to the deploy directory.
 #    own     <target>-<machine>.*   the image's files with their plain names (ext4.xz, wic.zst, manifest, spdx.json, ...). The
@@ -98,7 +94,6 @@ select_files shared "${shared_patterns[@]}"
 #    <name>.tmp and then renamed, so that no half-written file ever has its final name. A shared file that is already there (copied
 #    by another image of the same machine) must be byte-identical, otherwise two images disagree about the kernel: fail.
 mkdir -p "$dest"
-echo "$run_id" > "$part/.run-id"
 for f in "${names[@]}"; do
   if [ -e "$dest/$f" ]; then
     cmp -s "$deploy/$f" "$dest/$f" || die "'$f' is already in the release with different content (two images of $machine disagree)"
@@ -113,7 +108,6 @@ names+=("$target.provenance.json")
 
 # 5. The sums file of this image: one line per file, paths relative to this directory, so `sha256sum -c <target>.SHA256SUMS` works
 #    from there. It lists the statement too, which ties the statement to the files. It does not list itself.
-[ ! -e "$dest/$target.SHA256SUMS" ] || die "$target was already collected for $machine in this release"
 ( cd "$dest" && printf '%s\n' "${names[@]}" | LC_ALL=C sort | xargs -d '\n' sha256sum -- ) > "$dest/$target.SHA256SUMS.tmp"
 mv "$dest/$target.SHA256SUMS.tmp" "$dest/$target.SHA256SUMS"
 

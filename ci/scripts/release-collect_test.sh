@@ -37,10 +37,10 @@ mkdeploy() {
 # collect TREE TARGET [extra env assignments...]: run the tool the way build.sh does.
 collect() {
   local tree="$1" target="$2"; shift 2
-  env AGL_TREE="$tree" RELEASE_STAGING="$t/stage" RELEASE_BRANCH=testrel RELEASE_VERSION=0.0.1 RELEASE_RUN_ID=run1 "$@" \
+  env AGL_TREE="$tree" RELEASE_STAGING="$t/stage" RELEASE_BRANCH=testrel RELEASE_VERSION=0.0.1 "$@" \
     "$tool" --machine "$M" --target "$target" 2>&1
 }
-part="$t/stage/testrel/.0.0.1.partial"
+part="$t/stage/testrel/0.0.1"
 dest="$part/$M/deploy/images/$M"
 
 # 1. Good case: the first image of the release.
@@ -55,7 +55,6 @@ stamped=0; for f in "$dest"/*; do [[ "${f##*/}" =~ -[0-9]{14} ]] && stamped=1; d
 if [ "$stamped" -eq 0 ]; then ok "no timestamped copies"; else bad "a timestamped copy was collected"; fi
 if [ -e "$dest/other-image-$M.ext4.xz" ]; then bad "a file of another image was collected"; else ok "files of another image are left out"; fi
 if [ -e "$dest/junk" ]; then bad "a directory was collected"; else ok "directories are left out"; fi
-if [ -f "$part/.run-id" ] && [ "$(cat "$part/.run-id")" = run1 ]; then ok "run id recorded in the hidden marker"; else bad "run marker missing"; fi
 # The sums file verifies from its own directory, lists the statement, and does not list itself.
 if (cd "$dest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2>&1); then ok "sha256sum -c of the sums file passes"; else bad "sums file does not verify"; fi
 if grep -q ' agl-image-minimal.provenance.json$' "$dest/agl-image-minimal.SHA256SUMS"; then ok "the kas statement is listed in the sums"; else bad "statement not in the sums"; fi
@@ -80,15 +79,17 @@ if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'disagree'; then ok "a different ker
 out="$(collect "$t/tree1" agl-image-minimal)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already collected'; then ok "the same image twice is refused"; else bad "duplicate image accepted: $out"; fi
 
-# 5. A partial directory of ANOTHER run: refused (an earlier attempt is incomplete).
-mkdeploy "$t/tree4" agl-image-minimal kernel-A
-out="$(collect "$t/tree4" agl-image-minimal RELEASE_RUN_ID=run2)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'belongs to run run1'; then ok "a partial directory of another run is refused"; else bad "foreign partial accepted: $out"; fi
+# 5. Another HOST of the same release: its own staging area, nothing shared. The download server merges the two later, so a
+#    kernel that differs between the hosts is not seen here (promote.sh sees it: the sums of one image would not match).
+mkdeploy "$t/tree4" other-host-image kernel-B
+out="$(collect "$t/tree4" other-host-image RELEASE_STAGING="$t/stage2")"; rc=$?
+if [ "$rc" -eq 0 ] && [ -f "$t/stage2/testrel/0.0.1/$M/deploy/images/$M/other-host-image.SHA256SUMS" ] && [ ! -e "$t/stage2/testrel/0.0.1/$M/deploy/images/$M/agl-image-minimal.SHA256SUMS" ]; then ok "an image on another host collects into that host's own staging area"; else bad "second host: $out"; fi
 
-# 6. The final directory exists: the release is immutable, refuse.
-mkdir -p "$t/stage/testrel/0.0.2"
-out="$(collect "$t/tree4" agl-image-minimal RELEASE_VERSION=0.0.2)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already exists'; then ok "an existing release is refused"; else bad "existing release accepted: $out"; fi
+# 6. A leftover of a failed attempt (files, but no sums file): accepted when identical, so a rerun of the job works.
+mkdeploy "$t/tree7" rerun-image kernel-A
+collect "$t/tree7" rerun-image > /dev/null 2>&1; rm "$dest/rerun-image.SHA256SUMS"
+out="$(collect "$t/tree7" rerun-image)"; rc=$?
+if [ "$rc" -eq 0 ] && [ -f "$dest/rerun-image.SHA256SUMS" ]; then ok "the rerun of a failed collect works"; else bad "rerun refused: $out"; fi
 
 # 7. Missing input: no kas statement, no deploy directory, no file of the target.
 mkdeploy "$t/tree5" agl-image-minimal kernel-A; rm "$t/tree5/build/attestation/kas-build.provenance.json"
@@ -107,8 +108,8 @@ out="$(collect "$t/tree6" agl-image-minimal RELEASE_VERSION=1.2)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad RELEASE_VERSION'; then ok "a short version is refused"; else bad "bad version accepted"; fi
 out="$("$tool" --machine '../x' --target t 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a path in the machine name is refused"; else bad "path in machine name accepted"; fi
-# None of the refused calls above (versions 0.0.2, 0.0.3, 0.0.4) may have created a partial directory.
-left=0; for v in 0.0.2 0.0.3 0.0.4; do [ ! -e "$t/stage/testrel/.$v.partial" ] || left=1; done
-if [ "$left" -eq 0 ]; then ok "refused calls left nothing behind"; else bad "a refused call left a partial directory"; fi
+# None of the refused calls above (versions 0.0.3, 0.0.4) may have created a release directory.
+left=0; for v in 0.0.3 0.0.4; do [ ! -e "$t/stage/testrel/$v" ] || left=1; done
+if [ "$left" -eq 0 ]; then ok "refused calls left nothing behind"; else bad "a refused call left a directory"; fi
 
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

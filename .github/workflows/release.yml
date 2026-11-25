@@ -1,17 +1,20 @@
 name: release
 # Reusable workflow of the release process (specification: the owner's RELEASE-SPEC, manual chapter 19 to come).
 # It is called by a small workflow in agl-ucb that runs on the push of a tag <branch>_<version> and pins this file by full SHA.
-# The caller job must grant `permissions: { contents: read, id-token: write }` (a reusable workflow cannot have more than its caller).
+# The caller job must grant `permissions: { contents: write, id-token: write }` (a reusable workflow cannot have more than its caller):
+# id-token for the signing, contents: write for the release with the signed assets. Only the attest job uses them; build jobs say contents: read.
 #
-# What it does, in four jobs:
+# What it does, in three jobs:
 #   matrix    (GitHub-hosted)  check the tag, take the release pins file of the tag, find the images of the release tier
-#   build     (self-hosted agl-pr, NO id-token)  one job per image: build it with kas provenance, collect its files into the release
-#                              staging area of the builder (CACHE_DIR/staging/release/<branch>/.<version>.partial), upload two
-#                              small files (sums, statement; kilobytes) as a workflow artifact. The images never leave the builder.
+#   build     (self-hosted agl-pr, NO id-token)  one job per image, on ANY host of the pool, in parallel: build it with kas provenance,
+#                              collect its files into the release staging area of THAT host (CACHE_DIR/staging/release/<branch>/<version>),
+#                              upload two small files (sums, statement; kilobytes) as a workflow artifact. The images never leave the host.
 #   attest    (runner from the input, the ONLY job with id-token: write)  check each statement against the pins file, attest each
-#                              image's sums file, write and sign the top-level SHA256SUMS (release-attest.sh)
-#   finalize  (self-hosted agl-pr, no id-token)  place the signed files, verify them against the real image files, and rename the
-#                              partial directory to the release (release-finalize.sh)
+#                              image's sums file, write and sign the top-level SHA256SUMS (release-attest.sh), and publish the signed
+#                              small files as assets of the GitHub release of the tag (it needs contents: write for that, nothing else does)
+# The images of one release are built on different hosts and combined LATER, on the download server: it pulls the staging area of
+# every build host (kit/mirror/pull-sync.sh), fetches the signed assets of the release, verifies everything and promotes
+# (kit/release/promote.sh). No job here needs to know which host built which image.
 # Why the signing is in its own job: a build job runs a lot of code (recipes, scripts); the job that holds the right to sign must
 # not be it. The attest job gets only the small files, never the images.
 # Pull requests never get here: the caller runs on a tag, and agl-ucb only lets release engineers create such tags.
@@ -148,7 +151,7 @@ jobs:
     # The runner comes from the input: GitHub-hosted by default, a dedicated node later without changing anything else.
     runs-on: ${{ fromJSON(inputs.attest_runs_on) }}
     # The ONLY job that may sign: id-token: write lets it ask GitHub for the identity of this workflow.
-    permissions: { contents: read, id-token: write }
+    permissions: { contents: write, id-token: write }   # contents: write only to create the release with the signed assets (below)
     env:
       MATRIX: ${{ needs.matrix.outputs.matrix }}
       RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
@@ -186,41 +189,16 @@ jobs:
           agl-ci/ci/scripts/release-attest.sh --small small --pins "tree/kas/releases/pins_${GITHUB_REF_NAME}.yml" \
             --matrix "$MATRIX" --out signed --branch "$RELEASE_BRANCH" --version "$RELEASE_VERSION"
           { echo "### Release ${RELEASE_BRANCH} ${RELEASE_VERSION}: signed top level"; echo '```'; cat signed/SHA256SUMS; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-signed
-          path: signed
-          if-no-files-found: error
-          retention-days: 7
-
-  finalize:
-    needs: [matrix, attest]
-    if: ${{ !cancelled() && needs.attest.result == 'success' }}
-    runs-on: [self-hosted, agl-pr]
-    permissions: { contents: read }
-    env:
-      KAS_CONTAINER_IMAGE: ${{ needs.matrix.outputs.builder }}
-      RELEASE_BRANCH: ${{ needs.matrix.outputs.branch }}
-      RELEASE_VERSION: ${{ needs.matrix.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ job.workflow_repository }}
-          ref: ${{ job.workflow_sha }}
-          path: agl-ci
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-signed
-          path: signed
-      - name: finalize
+      # The signed files go to the download server as assets of the GitHub release of the tag (anonymous to read, nothing to configure
+      # on the server). One tar of the whole signed tree (promote.sh unpacks it into the merged staging tree and checks every file
+      # against the signed sums, so the tar itself needs no signature) and the two files a user checks first, for everybody to see.
+      # A release exists once per tag: a second run for the same tag fails here, which is right (releases are immutable).
+      - name: publish the signed files
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # release-finalize.sh needs the cache directory, which this container cannot enter: it runs as root in a container on the
-          # sidecar's Docker daemon (same arrangement as the collect step of build.sh). The staging area sits next to the sstate directory.
-          engine="$PWD/agl-ci/ci/scripts"; signed="$PWD/signed"
-          staging="${RELEASE_STAGING:-$(dirname "${AGL_SSTATE_DIR:?AGL_SSTATE_DIR is not set: this host has no cache directory}")/staging/release}"
-          docker run --rm --user 0 \
-            -v "$engine:$engine:ro" -v "$signed:$signed:ro" -v "$staging:$staging" \
-            -e RELEASE_STAGING="$staging" -e RELEASE_BRANCH -e RELEASE_VERSION -e RELEASE_RUN_ID="$GITHUB_RUN_ID" -e RELEASE_SIGNED_DIR="$signed" \
-            --entrypoint /bin/bash "$KAS_CONTAINER_IMAGE" "$engine/release-finalize.sh"
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C signed -czf release-signed.tar.gz .
+          gh release create "$GITHUB_REF_NAME" release-signed.tar.gz signed/SHA256SUMS signed/SHA256SUMS.bundle \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes "Signed checksums of release ${RELEASE_BRANCH} ${RELEASE_VERSION}. The images are on the download server once an engineer has countersigned."

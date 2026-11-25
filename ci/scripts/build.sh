@@ -67,7 +67,7 @@ if [ "${AGL_RELEASE:-}" = 1 ]; then
   docker run --rm --user 0 \
     -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$staging:$staging" -v "$small:$small" \
     -e AGL_TREE="$TREE" -e RELEASE_STAGING="$staging" -e RELEASE_BRANCH -e RELEASE_VERSION \
-    -e RELEASE_RUN_ID="${GITHUB_RUN_ID:-local}" -e RELEASE_SMALL_DIR="$small" \
+    -e RELEASE_SMALL_DIR="$small" \
     --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
     "$engine/release-collect.sh" --machine "$MACHINE" --target "$TARGET"
 fi

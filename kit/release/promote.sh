@@ -16,16 +16,26 @@
 #   RELEASE_PROMOTE         auto (default) or manual. manual: do every check and report, but do not promote
 #   RELEASE_MIN_SIGNATURES  engineer signatures needed (default 1)
 #   RELEASE_REPO            the repository whose tag the release workflow ran for (default dl9pf-agl/agl-ucb)
+#   RELEASE_ASSET_URL       where the signed files are (default: the asset release-signed.tar.gz of the GitHub release of the tag
+#                           in RELEASE_REPO); a test sets a file:// URL
 #   RELEASE_CI_VERIFY_ARGS  how to verify the CI signatures. Default: the keyless identity of agl-ci's release.yml at a pinned commit,
 #                           issuer GitHub, repository and tag of the release. A test sets a public key here.
 #   COSIGN                  cosign binary (default cosign)
 #
+# Where the release comes from: the images were built on different hosts. The pull (kit/mirror/pull-sync.sh, several SOURCES)
+# merges the staging areas of all build hosts into $RELEASE_ROOT/staging/release/<branch>/<version>/. The signed files (sums of all
+# images, bundles, pins, top-level sums) are an asset of the GitHub release of the tag (release.yml, job attest); this script
+# fetches and unpacks that asset into the merged tree. Hosts and signed files may arrive in any order, so "not here yet" is a wait.
+#
 # Flow per staged release, in the order it runs (the cheap checks first: a release that waits for its signature is not hashed again
 # every few minutes):
 #   1. names are plain, the directory is a real directory, the release does not exist yet (else: skipped, nothing is touched)
+#      the signed files: if SHA256SUMS is not in the tree yet, fetch release-signed.tar.gz of the tag and unpack it (not published
+#      yet: waiting; a tar with a link or a path outside the tree: error)
 #   2. CI signature of SHA256SUMS (bundle) with the pinned identity           -> failure = error
 #   3. engineer signatures: count those valid for a key that is not revoked   -> too few = "waiting", not an error
-#   4. sha256sum -c of SHA256SUMS and of every per-image sums file; no symlink; no file that nobody lists   -> failure = error
+#   4. every listed file is here (a build host may not have been pulled yet: waiting), then sha256sum -c of SHA256SUMS and of every
+#      per-image sums file; no symlink; no file that nobody lists   -> failure = error
 #   5. every per-image attestation (bundle) verifies with the same identity    -> failure = error
 #   6. auto: COPY the directory to a temp directory next to the release, add the engineers' signatures and a PROMOTED record, rename
 #      into place (the rename is atomic). The staging copy stays: while it exists the pull does not fetch it again. Removing it is
@@ -53,7 +63,9 @@ touch "$root/release-done.txt" 2>/dev/null || true
 # Before the first release the builder has no staging/release, so the pull creates nothing: that is normal, not an error.
 mkdir -p "$root/staging/release"
 command -v "$cosign" > /dev/null || { echo "promote: cosign not found ($cosign)" >&2; exit 1; }
+for tool in curl tar; do command -v "$tool" > /dev/null || { echo "promote: $tool is needed" >&2; exit 1; }; done
 mkdir -p "$root/release"
+work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT   # scratch space of this run (the downloaded asset, the file lists)
 
 # One run at a time: a slow hash of a big release must not overlap the next cron start.
 exec 9> "$root/.promote.lock"
@@ -68,16 +80,39 @@ ci_args() {
   printf '%s' "--certificate-identity-regexp ^https://github.com/${owner}/agl-ci/\\.github/workflows/release\\.yml@[0-9a-f]{40}\$ --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-github-workflow-repository ${repo} --certificate-github-workflow-ref refs/tags/$1"
 }
 
+# fetch_signed TAG DIR: download the signed files of the release and unpack them into DIR.
+# Returns 0 = done, 1 = not published yet, 2 = the tar is not safe. The tar is not signed, and need not be: every file in it is listed
+# in the signed top-level sums (or is that file or its bundle, which cosign checks), so a wrong tar fails the checks that follow.
+# What is checked here is only that unpacking cannot write outside DIR or create links.
+fetch_signed() {
+  local tag="$1" dir="$2" url tgz="$work/asset.tgz" types
+  url="${RELEASE_ASSET_URL:-https://github.com/${repo}/releases/download/${tag}/release-signed.tar.gz}"
+  curl -fsSL --max-time 300 -o "$tgz" "$url" 2> /dev/null || return 1
+  tar -tzf "$tgz" > /dev/null 2>&1 || return 2
+  types="$(tar -tzvf "$tgz" | cut -c1 | sort -u | tr -d '\n')"
+  case "$types" in *[!d-]*) return 2 ;; esac                                  # only plain files and directories
+  if tar -tzf "$tgz" | grep -qE '(^/|(^|/)\.\.(/|$))'; then return 2; fi        # no absolute path, no ..
+  tar -xzf "$tgz" --no-same-owner --no-same-permissions --no-overwrite-dir -C "$dir" || return 2
+}
+
 # check_one BRANCH VERSION: return 0 = promoted (or verified, in manual mode), 10 = waiting, 11 = skipped, 1 = failed.
 check_one() {
-  local branch="$1" version="$2" tag="${1}_${2}" stage final dir ok=0 sig id k args n=0 ids=""
+  local branch="$1" version="$2" tag="${1}_${2}" stage final dir ok=0 sig id k args n=0 ids="" rc
   stage="$root/staging/release/$branch/$version"; final="$root/release/$branch/$version"
   # 1. names and state
   [[ "$branch" =~ ^[a-z]+$ && "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "promote: $tag: not a release name, ignored"; return 11; }
   [ -d "$stage" ] && [ ! -L "$stage" ] || { echo "promote: $tag: not a real directory"; return 1; }
   if [ -e "$final" ]; then echo "promote: $tag: already released, skipped"; return 11; fi
   args="$(ci_args "$tag")"
-  [ -f "$stage/SHA256SUMS" ] && [ -f "$stage/SHA256SUMS.bundle" ] || { echo "promote: $tag: SHA256SUMS or its bundle is missing (pull still running?)"; return 10; }
+  if [ ! -f "$stage/SHA256SUMS" ] || [ ! -f "$stage/SHA256SUMS.bundle" ]; then
+    rc=0; fetch_signed "$tag" "$stage" || rc=$?
+    case "$rc" in
+      0) echo "promote: $tag: signed files fetched and unpacked" ;;
+      1) echo "promote: $tag: no signed files yet (the release asset is not published)"; return 10 ;;
+      *) echo "promote: $tag: FAIL the signed asset is not a safe tar"; return 1 ;;
+    esac
+    [ -f "$stage/SHA256SUMS" ] && [ -f "$stage/SHA256SUMS.bundle" ] || { echo "promote: $tag: FAIL the asset lacks SHA256SUMS or its bundle"; return 1; }
+  fi
   # 2. CI signature
   # shellcheck disable=SC2086   # split into words on purpose
   ( cd "$stage" && "$cosign" verify-blob --bundle SHA256SUMS.bundle $args SHA256SUMS > /dev/null 2>&1 ) || { echo "promote: $tag: FAIL the CI signature of SHA256SUMS does not verify"; return 1; }
@@ -93,22 +128,31 @@ check_one() {
     else echo "promote: $tag: signature file of '$id' does not verify, ignored"; fi
   done < <(find "$ucb/kas/releases" -maxdepth 1 -type f -name "$tag.SHA256SUMS.*.sig" -print0 | sort -z)
   if [ "$n" -lt "$minsig" ]; then echo "promote: $tag: CI signature ok, waiting for engineer signatures ($n of $minsig)"; return 10; fi
-  # 4. hashes and file set
+  # 4. what must be here, then the hashes. First the list of every file that the signed sums name (the top level lists the per-image
+  #    sums files, the others list their image's files, paths relative to the sums file's own directory).
   [ -z "$(find "$stage" ! -type f ! -type d -print -quit)" ] || { echo "promote: $tag: FAIL the directory holds a symlink or special file"; return 1; }
-  ( cd "$stage" && sha256sum -c --quiet SHA256SUMS > /dev/null 2>&1 ) || { echo "promote: $tag: FAIL SHA256SUMS does not verify"; return 1; }
-  local sums count=0 listed; listed="$(mktemp)"
+  local sums count=0 listed missing=0 f; listed="$work/listed"
   awk '{ $1=""; sub(/^ +/, ""); print }' "$stage/SHA256SUMS" | sed 's/^\*//' > "$listed"
   while IFS= read -r -d '' sums; do
     dir="${sums#"$stage"/}"; dir="$(dirname "$dir")"
-    ( cd "$(dirname "$sums")" && sha256sum -c --quiet "$(basename "$sums")" > /dev/null 2>&1 ) || { echo "promote: $tag: FAIL $sums does not verify"; return 1; }
     awk '{ $1=""; sub(/^ +/, ""); print }' "$sums" | sed 's/^\*//' | sed "s#^#$dir/#" >> "$listed"
     count=$((count + 1))
+  done < <(find "$stage" -type f -name '*.SHA256SUMS' ! -path "$stage/SHA256SUMS" -print0 | sort -z)
+  [ "$count" -gt 0 ] || { echo "promote: $tag: FAIL no per-image sums file"; return 1; }
+  # A build host that has not been pulled yet: its files are listed but not here. That is waiting, not failure.
+  while IFS= read -r f; do
+    [ -e "$stage/$f" ] || { missing=$((missing + 1)); [ "$missing" -gt 3 ] || echo "promote: $tag: not here yet: $f"; }
+  done < "$listed"
+  if [ "$missing" -gt 0 ]; then echo "promote: $tag: waiting for $missing listed files (a build host not pulled yet?)"; return 10; fi
+  # Everything is here: the hashes, then the attestation of every image.
+  ( cd "$stage" && sha256sum -c --quiet SHA256SUMS > /dev/null 2>&1 ) || { echo "promote: $tag: FAIL SHA256SUMS does not verify"; return 1; }
+  while IFS= read -r -d '' sums; do
+    ( cd "$(dirname "$sums")" && sha256sum -c --quiet "$(basename "$sums")" > /dev/null 2>&1 ) || { echo "promote: $tag: FAIL $sums does not verify"; return 1; }
     # 5. the attestation of this image (same directory, same name stem)
     local bundle="${sums%.SHA256SUMS}.slsa.intoto.bundle"
     # shellcheck disable=SC2086
     "$cosign" verify-blob-attestation --type "$URI" --bundle "$bundle" $args "$sums" > /dev/null 2>&1 || { echo "promote: $tag: FAIL attestation of $sums does not verify"; return 1; }
   done < <(find "$stage" -type f -name '*.SHA256SUMS' ! -path "$stage/SHA256SUMS" -print0 | sort -z)
-  [ "$count" -gt 0 ] || { echo "promote: $tag: FAIL no per-image sums file"; return 1; }
   while IFS= read -r -d '' k; do
     k="${k#./}"; case "$k" in SHA256SUMS|SHA256SUMS.bundle) continue ;; esac
     grep -qxF -- "$k" "$listed" || { echo "promote: $tag: FAIL file that nobody lists: $k"; ok=1; }

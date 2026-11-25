@@ -4,7 +4,7 @@
 # Needs cosign (COSIGN=/path or in PATH), else SKIP and exit 0. The temporary directory it makes is left in place (path printed).
 #
 # Keys: "ci" stands for the keyless CI identity (promote.sh gets RELEASE_CI_VERIFY_ARGS with its public key), "alice" and "bob"
-# are release engineers. Each case builds a fresh fixture: a release as release-attest.sh + release-finalize.sh leave it, in
+# are release engineers. Each case builds a fresh fixture: a release as the build hosts, release-attest.sh and the pull leave it, in
 # staging/release/testrel/0.0.1, plus engineers' signature files in a fake agl-ucb checkout.
 # shellcheck disable=SC2015   # "condition && ok || bad" is the idiom of this test; ok never fails, so bad runs only when the condition does not hold
 set -uo pipefail
@@ -40,6 +40,16 @@ mk() {
 }
 # esign DIR ID: the engineer ID signs the staged top-level sums and commits the signature to the fake agl-ucb.
 esign() { "$cosign" sign-blob --yes --key "$t/keys-$2/cosign.key" $sig_args --output-signature "$1/ucb/kas/releases/$TAG.SHA256SUMS.$2.sig" "$1/root/staging/release/testrel/0.0.1/SHA256SUMS" > /dev/null 2>&1; }
+# mksplit NAME: like mk, but the signed files are NOT in the staging tree: they are in $t/NAME/asset.tgz (the release asset of the tag,
+# made the way release.yml makes it) and the tree holds only what the build hosts delivered (image files).
+mksplit() {
+  local d="$t/$1" s f
+  mk "$1"; s="$d/root/staging/release/testrel/0.0.1"; mkdir -p "$d/signed"
+  while IFS= read -r -d '' f; do
+    f="${f#"$s"/}"; mkdir -p "$d/signed/$(dirname "$f")"; mv "$s/$f" "$d/signed/$f"
+  done < <(find "$s" -type f \( -name 'SHA256SUMS' -o -name 'SHA256SUMS.bundle' -o -name 'pins_*' -o -name '*.SHA256SUMS' -o -name '*.provenance.json' -o -name '*.slsa.intoto.bundle' \) -print0)
+  tar --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -C "$d/signed" -czf "$d/asset.tgz" .
+}
 # run NAME [env...]: promote.sh on fixture NAME (CI verified with the public key of "ci").
 run() {
   local n="$1"; shift
@@ -76,7 +86,9 @@ out="$(run extra)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted extra && echo "$out" | 
 mk link; ln -s /etc/passwd "$t/link/root/staging/release/testrel/0.0.1/link"
 out="$(run link)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted link && echo "$out" | grep -q 'symlink' && ok "a symlink is refused" || bad "symlink: $out"
 mk nobundle; rm "$t/nobundle/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img.slsa.intoto.bundle"
-out="$(run nobundle)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted nobundle && ok "a missing attestation bundle is refused" || bad "missing bundle: $out"
+out="$(run nobundle)"; rc=$?; [ "$rc" -eq 0 ] && ! promoted nobundle && echo "$out" | grep -q 'not here yet: .*img.slsa.intoto.bundle' && ok "a listed attestation bundle that is not here: waits" || bad "missing bundle: $out"
+mk badbundle; echo "not a bundle" > "$t/badbundle/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img.slsa.intoto.bundle"
+out="$(run badbundle)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted badbundle && echo "$out" | grep -q 'SHA256SUMS does not verify' && ok "a wrong attestation bundle is refused" || bad "bad bundle: $out"
 mk wrongci
 out="$(run wrongci RELEASE_CI_VERIFY_ARGS="--key $t/keys-ci2/cosign.pub --insecure-ignore-tlog=true")"; rc=$?
 [ "$rc" -ne 0 ] && ! promoted wrongci && echo "$out" | grep -q 'CI signature' && ok "a wrong CI identity is refused" || bad "wrong CI: $out"
@@ -114,6 +126,32 @@ out="$(env RELEASE_ROOT="$t/waiting2/root" RELEASE_STAGING_KEEP_DAYS=0 "$here/cl
 [ -d "$t/waiting2/root/staging/release/testrel/0.0.1" ] && ok "an unpromoted staged release is never removed" || bad "unpromoted removed: $out"
 out="$(clean RELEASE_STAGING_KEEP_DAYS=0)"
 if [ ! -e "$t/good/root/staging/release/testrel/0.0.1" ] && [ -f "$t/good/root/release/testrel/0.0.1/SHA256SUMS" ] && grep -qx '/release/testrel/0.0.1/' "$t/good/root/release-done.txt"; then ok "an old promoted copy is removed, the release stays, the exclude line is written"; else bad "cleanup: $out"; fi
+
+# 8b. The images come from different hosts and the signed files from the release asset of the tag (the real flow).
+mksplit asset
+out="$(run asset RELEASE_ASSET_URL="file://$t/asset/asset.tgz")"; rc=$?
+if [ "$rc" -eq 0 ] && promoted asset && echo "$out" | grep -q 'signed files fetched'; then ok "signed files are fetched from the release asset and the release is promoted"; else bad "asset flow: $out"; fi
+[ -f "$t/asset/root/release/testrel/0.0.1/SHA256SUMS.bundle" ] && ok "the unpacked signed files are part of the release" || bad "signed files missing in release"
+
+mksplit noasset
+out="$(run noasset RELEASE_ASSET_URL="file://$t/noasset/does-not-exist.tgz")"; rc=$?
+if [ "$rc" -eq 0 ] && ! promoted noasset && echo "$out" | grep -q 'no signed files yet'; then ok "an asset that is not published yet: waits"; else bad "no asset: $out"; fi
+
+mksplit hostmissing; rm "$t/hostmissing/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img-$M.ext4.xz"
+out="$(run hostmissing RELEASE_ASSET_URL="file://$t/hostmissing/asset.tgz")"; rc=$?
+if [ "$rc" -eq 0 ] && ! promoted hostmissing && echo "$out" | grep -q 'waiting for 1 listed files'; then ok "an image that its build host has not delivered yet: waits"; else bad "missing host: $out"; fi
+cp "$t/asset/root/release/testrel/0.0.1/$M/deploy/images/$M/img-$M.ext4.xz" "$t/hostmissing/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/"
+out="$(run hostmissing RELEASE_ASSET_URL="file://$t/hostmissing/asset.tgz")"; promoted hostmissing && ok "once the file has arrived the release is promoted" || bad "after arrival: $out"
+
+# an unsafe tar (a path outside the tree, a link) is refused before anything is unpacked
+mksplit evil
+( cd "$t/evil" && mkdir -p evilsrc/x && echo bad > evilsrc/x/f && tar -czf evil.tgz -C evilsrc --transform 's#^x/f#../escaped#' x/f )
+out="$(run evil RELEASE_ASSET_URL="file://$t/evil/evil.tgz")"; rc=$?
+if [ "$rc" -ne 0 ] && [ ! -e "$t/evil/root/staging/release/testrel/escaped" ] && echo "$out" | grep -q 'not a safe tar'; then ok "a tar with a path outside the tree is refused"; else bad "evil tar: $out"; fi
+mksplit linktar
+( cd "$t/linktar" && mkdir -p linksrc && ln -s /etc/passwd linksrc/pins_testrel_0.0.1.yml && tar -czf link.tgz -C linksrc . )
+out="$(run linktar RELEASE_ASSET_URL="file://$t/linktar/link.tgz")"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'not a safe tar'; then ok "a tar with a symlink is refused"; else bad "link tar: $out"; fi
 
 # 8. Before the first release there is no staging/release at all: nothing to do, no error. (cleanup-staging.sh the same)
 mkdir -p "$t/empty/root" "$t/empty/ucb/kas/releases"
