@@ -34,6 +34,16 @@
 #   AGL_HASHSERV_RW  - "host:port" of the shared read-write hash equivalence server (kas/local/hashserv-rw.yml). TRUSTED builds only.
 #   AGL_HASHSERV_UPSTREAM - "host:port" of the shared READ-ONLY server (kas/local/hashserv-upstream.yml): the build runs its own
 #                       private local server that reads from it. For untrusted builds. The two are mutually exclusive.
+#   AGL_VULNSCOUT    - set to 1: enables VulnScout (github.com/savoirfairelinux/meta-vulnscout), a second, independent
+#                       CVE/vulnerability scanner. Which kas/local/ fragment gets added depends on CI, not just this
+#                       flag: with CI=true (every agl-ci job), kas/local/vulnscout-sbom.yml - plain SBOM generation
+#                       only (create-spdx, no docker); the scan itself then runs from the trusted runner side, against
+#                       that SBOM, via ci/scripts/vulnscout-scan.sh (AGL_VULNSCOUT_ENFORCE decides whether a match fails
+#                       the job - see that script). Without CI=true (a developer's own workstation),
+#                       kas/local/vulnscout.yml - the full bbclass, including its own `docker` calls from inside the
+#                       build: fine on a workstation (the developer already has full access to their own Docker daemon),
+#                       never fine in CI (that would hand the untrusted build environment access to the privileged
+#                       sidecar Docker daemon only the trusted runner is meant to reach - manual chapter 05).
 #   AGL_SITE_CONF    - path to a personal site.conf, e.g. `export AGL_SITE_CONF=$HOME/.yocto/site.conf`.
 #                       bitbake auto-includes conf/site.conf from the build dir with no kas
 #                       config changes needed - this just bind-mounts the file into place
@@ -195,6 +205,14 @@ kas_extra_includes() {
   fi
   if [ -n "${AGL_HASHSERV_UPSTREAM:-}" ]; then
     printf ':kas/local/hashserv-upstream.yml'
+  fi
+  if [ -n "${AGL_VULNSCOUT:-}" ]; then
+    # CI never gets the fragment that lets the build call docker itself - see the doc comment above.
+    if [ "${CI:-}" = "true" ]; then
+      printf ':kas/local/vulnscout-sbom.yml'
+    else
+      printf ':kas/local/vulnscout.yml'
+    fi
   fi
 }
 

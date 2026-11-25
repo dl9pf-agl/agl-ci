@@ -91,13 +91,16 @@ for f in "${names[@]}"; do
   mv "$dest/$f.tmp" "$dest/$f"
 done
 
-# trowl-report/, if the trowl scan step wrote one: a whole directory, copied recursively. Marked seen so the "not included"
-# report below does not list it as skipped.
-if [ -d "$deploy/trowl-report" ]; then
-  mkdir -p "$dest/trowl-report"
-  cp -a "$deploy/trowl-report/." "$dest/trowl-report/"
-  seen[trowl-report]=trowl
-fi
+# Scanner report directories, if the scanner wrote one: trowl-report/ (ci/scripts/trowl-scan.sh, AGL_TROWL=1) and
+# vulnscout-report/ (VULNSCOUT_DEPLOY_DIR, AGL_VULNSCOUT=1, written by bitbake itself during the build). Whole directories,
+# copied recursively. Marked seen so the "not included" report below does not list them as skipped.
+for report in trowl-report vulnscout-report; do
+  if [ -d "$deploy/$report" ]; then
+    mkdir -p "$dest/$report"
+    cp -a "$deploy/$report/." "$dest/$report/"
+    seen[$report]=scanner
+  fi
+done
 
 total="$(cd "$dest" && du -ch -- "${names[@]}" | tail -n 1 | cut -f1)"
 echo "nightly-collect: $target on $machine ($repo): ${#names[@]} files, $total, into $part"

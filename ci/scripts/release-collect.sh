@@ -106,17 +106,20 @@ done
 cp "$stmt" "$dest/$target.provenance.json"
 names+=("$target.provenance.json")
 
-# trowl-report/, if the trowl scan step wrote one (ci/scripts/build.sh, AGL_TROWL=1): a whole directory, not a plain-named
-# file, so select_files above never sees it. Copied recursively and every file inside is added to the sums list by its
-# relative path, so it is hashed and verified like every other file of the image.
-if [ -d "$deploy/trowl-report" ]; then
-  mkdir -p "$dest/trowl-report"
-  cp -a "$deploy/trowl-report/." "$dest/trowl-report/"
-  while IFS= read -r -d '' f; do
-    names+=("trowl-report/${f#"$deploy/trowl-report/"}")
-  done < <(find "$deploy/trowl-report" -type f -print0)
-  seen[trowl-report]=trowl
-fi
+# Scanner report directories, if the scanner wrote one: trowl-report/ (ci/scripts/build.sh, AGL_TROWL=1) and
+# vulnscout-report/ (VULNSCOUT_DEPLOY_DIR, AGL_VULNSCOUT=1, written by bitbake itself during the build). Whole
+# directories, not plain-named files, so select_files above never sees them. Copied recursively and every file inside is
+# added to the sums list by its relative path, so it is hashed and verified like every other file of the image.
+for report in trowl-report vulnscout-report; do
+  if [ -d "$deploy/$report" ]; then
+    mkdir -p "$dest/$report"
+    cp -a "$deploy/$report/." "$dest/$report/"
+    while IFS= read -r -d '' f; do
+      names+=("$report/${f#"$deploy/$report/"}")
+    done < <(find "$deploy/$report" -type f -print0)
+    seen[$report]=scanner
+  fi
+done
 
 # 5. The sums file of this image: one line per file, paths relative to this directory, so `sha256sum -c <target>.SHA256SUMS` works
 #    from there. It lists the statement too, which ties the statement to the files. It does not list itself.
