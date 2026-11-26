@@ -115,7 +115,7 @@ job for the nightly tier only) makes the step `collect` (`ci/scripts/collect.sh`
 reason). It builds the image folder in the hidden `NIGHTLY_STAGING/.<date>.partial/` and then moves it, in one rename, to
 `NIGHTLY_STAGING/<date>/<repo>/<machine>/<target>/`. So an image is public as soon as its own build is done (2026-11-26: a test
 lab waits for it; before, the run was published as a whole, when the slowest image was done). The folder holds everything of one
-image: its files, the kernel and boot files, `report-trowl/`, `report-vulnscout/`, `build.toml` (repo, commit, run address) and
+image: its files, the kernel and boot files, `report-trowl/`, `report-vulnscout/`, `build.toml` (repo, commit, run address, builder image), `<target>-<machine>.kas.yml` (below) and
 `<target>.SHA256SUMS`. The job `nightly-finalize` writes `<date>/COMPLETE` once every build job of the run succeeded; a run with a
 failed image publishes the others and never gets the marker. The download server pulls every minute
 (`kit/release/run.sh nightly`). **A consumer (LAVA) takes the full URL of the image folder, waits until the sums file is there
@@ -126,6 +126,18 @@ apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHT
 abandoned `.partial` directory (4 days). `<repo>` is the repository that **owns the image** (the matrix entry's `repo`, passed as
 `IMAGE_REPO`), not the repository whose cron started the run: the nightly of meta-agl also builds the images of meta-agl-demo and
 meta-agl-devel.
+
+## The kas file of an image (2026-11-26)
+After a nightly or release build, `build.sh` writes `<target>-<machine>.kas.yml` next to the image (`kas dump --resolve-refs
+--resolve-local`): all fragments merged into one file, a commit for every repository, the target named. To build the same setup
+elsewhere, in an empty directory (the builder image is in `build.toml` of a nightly):
+```bash
+KAS_CONTAINER_IMAGE=<builder> kas-container build <target>-<machine>.kas.yml
+```
+It is the **same setup, not a bit-identical image**: time stamps, sstate reuse and `${AUTOREV}` recipes (the databases of the
+scanners) are outside it. It carries no cache, mirror or hash server settings, so a first build fetches from upstream and runs cold
+(many hours). It keeps the CI settings that change the image, among them **`agl-devel`: a login without password**. Do not ship
+such an image.
 
 ## Scans: trowl in the build, vulnscout beside it (2026-11-26)
 Two independent scanners write a report next to every image of the nightly and release builds. Neither fails a build: the reports

@@ -30,7 +30,7 @@ mkdeploy() {
 collect() {
   local tree="$1" target="$2"; shift 2
   env AGL_TREE="$tree" NIGHTLY_STAGING="$t/stage" NIGHTLY_DATE=2026-11-26-0300 NIGHTLY_RUN_ID=run1 NIGHTLY_COMMIT="$C" \
-    NIGHTLY_RUN_URL=https://example.org/actions/runs/1 "$@" \
+    NIGHTLY_RUN_URL=https://example.org/actions/runs/1 NIGHTLY_BUILDER=example.org/builder@sha256:abc "$@" \
     "$tool" --machine "$M" --target "$target" --repo meta-agl 2>&1
 }
 
@@ -43,6 +43,7 @@ if [ "$rc" -eq 0 ]; then ok "a normal collect runs"; else bad "collect failed: $
 if [ -f "$dest/agl-image-minimal-$M.ext4.xz" ] && [ ! -L "$dest/agl-image-minimal-$M.ext4.xz" ] && [ -f "$dest/bzImage-$M.bin" ]; then ok "the image's own file and the kernel are public at once"; else bad "files missing in $dest"; fi
 if [ ! -e "$dest/other-image-$M.ext4.xz" ] && [ ! -e "$dest/junk" ]; then ok "another image's file and a plain directory are not collected"; else bad "unwanted entries collected"; fi
 if grep -qx 'repo = "meta-agl"' "$dest/build.toml" && grep -qx "commit = \"$C\"" "$dest/build.toml" && grep -qx 'run = "https://example.org/actions/runs/1"' "$dest/build.toml"; then ok "build.toml names repo, commit and run"; else bad "build.toml wrong"; fi
+if grep -qx 'builder = "example.org/builder@sha256:abc"' "$dest/build.toml"; then ok "build.toml names the builder image"; else bad "builder missing in build.toml"; fi
 if (cd "$dest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2>&1) && grep -q ' build.toml$' "$dest/agl-image-minimal.SHA256SUMS" && ! grep -q 'SHA256SUMS' "$dest/agl-image-minimal.SHA256SUMS"; then ok "the sums file verifies, lists build.toml and not itself"; else bad "sums file wrong"; fi
 if [ -z "$(find "$t/stage/.2026-11-26-0300.partial" -name '*.xz')" ] && [ ! -e "$run/COMPLETE" ]; then ok "nothing is left in the work directory and the run is not marked complete"; else bad "work files left, or COMPLETE written"; fi
 

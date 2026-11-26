@@ -42,7 +42,7 @@ which images of one machine shared the kernel files and the vulnscout report).
 | pins file | agl-ucb `kas/releases/pins_<branch>_<version>.yml`: every repo of every fragment, one commit each; the release job copies it over `kas/pins.yml` in its throw-away tree |
 | engineer signature | agl-ucb `kas/releases/<branch>_<version>.SHA256SUMS.<id>.sig` (one file per engineer, added after the tag) |
 | image files | `<repo>/<machine>/<target>/`: `<target>-<machine>.*` (own files) plus the kernel and boot files of the machine (`*Image-<machine>.bin`, `*Image`, `*.efi`, `*.efi.stub`, `*.dtb`) |
-| per image | `<target>.provenance.json` (kas statement), `<target>.SHA256SUMS` (hash of every file of that image), `<target>.slsa.intoto.bundle` (attestation of the sums file) |
+| per image | `<target>-<machine>.kas.yml` (the flattened kas file, chapter 13), `<target>.provenance.json` (kas statement), `<target>.SHA256SUMS` (hash of every file of that image), `<target>.slsa.intoto.bundle` (attestation of the sums file) |
 | per release | `SHA256SUMS` (hashes of all sums files, statements, bundles, the pins file), `SHA256SUMS.bundle` (its CI signature), `pins_<branch>_<version>.yml` |
 | after promotion | `SHA256SUMS.<id>.sig` (engineer signatures), `PROMOTED` (when and by what) |
 
