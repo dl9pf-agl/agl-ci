@@ -28,11 +28,15 @@ echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) run.sh ${1:-} ${2:-}"
 if [ "${1:-}" = mirror ]; then exec env SOURCES="$BUILD_RSYNC" MIRROR_ROOT="$RELEASE_ROOT" "$here/../mirror/pull-sync.sh"; fi
 if [ "${1:-}" = git ]; then exec env MIRROR_ROOT="$RELEASE_ROOT" "$here/../mirror/git-refresh.sh"; fi
 if [ "${1:-}" = cleanup ]; then exec "$here/cleanup-staging.sh"; fi
-if [ "${1:-}" = nightly ] && [ "${2:-}" = cleanup ]; then exec "$here/cleanup-nightly.sh"; fi
+# nightly/latest follows what is there: after the cleanup, and after every pull (also a failed one: part of it may have arrived)
+if [ "${1:-}" = nightly ] && [ "${2:-}" = cleanup ]; then "$here/cleanup-nightly.sh"; exec "$here/latest-nightly.sh"; fi
 if [ "${1:-}" = nightly ]; then
   # Just the pull: a nightly is never signed, so there is no promote step - the pull itself is the publish.
   touch "$RELEASE_ROOT/nightly-done.txt"
-  exec env AREAS=nightly SOURCES="$BUILD_RSYNC" RSYNC_EXTRA="--exclude-from=$RELEASE_ROOT/nightly-done.txt" MIRROR_ROOT="$RELEASE_ROOT" "$here/../mirror/pull-sync.sh"
+  rc=0
+  env AREAS=nightly SOURCES="$BUILD_RSYNC" RSYNC_EXTRA="--exclude-from=$RELEASE_ROOT/nightly-done.txt" MIRROR_ROOT="$RELEASE_ROOT" "$here/../mirror/pull-sync.sh" || rc=$?
+  "$here/latest-nightly.sh"
+  exit "$rc"
 fi
 [ -z "${1:-}" ] || { echo "usage: run.sh [cleanup|nightly|nightly cleanup|mirror|git]" >&2; exit 1; }
 # 1. the exclude file of the pull must exist (cleanup-staging.sh fills it)

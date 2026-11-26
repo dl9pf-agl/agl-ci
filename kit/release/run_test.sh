@@ -16,7 +16,7 @@ cp "$src/run.sh" "$t/kit/release/run.sh"
 for s in pull-sync git-refresh; do
   printf '#!/usr/bin/env bash\necho "%s SOURCES=${SOURCES:-} MIRROR_ROOT=${MIRROR_ROOT:-} AREAS=${AREAS:-} EXTRA=${RSYNC_EXTRA:-}"\n' "$s" > "$t/kit/mirror/$s.sh"
 done
-for s in cleanup-staging cleanup-nightly promote; do printf '#!/usr/bin/env bash\necho "%s called"\n' "$s" > "$t/kit/release/$s.sh"; done
+for s in cleanup-staging cleanup-nightly latest-nightly promote; do printf '#!/usr/bin/env bash\necho "%s called"\n' "$s" > "$t/kit/release/$s.sh"; done
 chmod +x "$t"/kit/mirror/*.sh "$t"/kit/release/*.sh
 cat > "$t/promote.env" <<EOF2
 export RELEASE_ROOT=$t/root
@@ -40,6 +40,11 @@ if [ "$rc" -eq 0 ] && grep -q "git-refresh SOURCES= MIRROR_ROOT=$t/root" "$t/mir
 : > "$t/release.log"; : > "$t/mirror.log"; run nightly; run nightly cleanup; run cleanup
 if grep -q 'pull-sync SOURCES=rsync://builder.example/agl/ MIRROR_ROOT=.* AREAS=nightly' "$t/mirror.log"; then ok "nightly: pulls the nightly area, in the mirror log"; else bad "mirror log: $(cat "$t/mirror.log")"; fi
 if grep -q 'cleanup-nightly called' "$t/release.log" && grep -q 'cleanup-staging called' "$t/release.log"; then ok "both cleanups log to the release log"; else bad "release log: $(cat "$t/release.log")"; fi
+
+# 3b. nightly/latest is updated after the pull and after the nightly cleanup; a failed pull still updates it and stays a failure
+if grep -q 'latest-nightly called' "$t/mirror.log" && grep -q 'latest-nightly called' "$t/release.log"; then ok "latest is updated after the pull and after the cleanup"; else bad "latest not updated"; fi
+printf '#!/usr/bin/env bash\nexit 3\n' > "$t/kit/mirror/pull-sync.sh"; : > "$t/mirror.log"; run nightly; rc=$?
+if [ "$rc" -eq 3 ] && grep -q 'latest-nightly called' "$t/mirror.log"; then ok "a failed pull: latest still updated, the failure is reported"; else bad "failed pull: rc=$rc $(cat "$t/mirror.log")"; fi
 
 # 4. an unknown word is refused with the usage text
 run bogus > "$t/out" 2>&1; rc=$?
