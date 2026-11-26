@@ -118,7 +118,8 @@ lab waits for it; before, the run was published as a whole, when the slowest ima
 image: its files, the kernel and boot files, `report-trowl/`, `report-vulnscout/`, `build.toml` (repo, commit, run address, builder image), `<target>-<machine>.kas.yml` (below) and
 `<target>.SHA256SUMS`. The job `nightly-finalize` writes `<date>/COMPLETE` once every build job of the run succeeded; a run with a
 failed image publishes the others and never gets the marker. The download server pulls every minute
-(`kit/release/run.sh nightly`). **A consumer (LAVA) takes the full URL of the image folder, waits until the sums file is there
+(`kit/release/run.sh nightly`) and then points the link `nightly/latest` at the newest run that has at least one image
+(`kit/release/latest-nightly.sh`; the run may still be building or lack a failed image). **A consumer (LAVA) takes the full URL of the image folder, waits until the sums file is there
 and verifies the files against it, and retries if that fails.** No signing: the sums file only says that a download is whole.
 Served at the download server's top level, `/nightly/<date>/...` (own nginx location, own mount in `kit/mirror/run.sh`, kept
 apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHTLY_KEEP_DAYS` (default 7) by
