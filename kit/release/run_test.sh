@@ -36,9 +36,10 @@ if [ "$rc" -eq 0 ] && grep -q "pull-sync SOURCES=rsync://builder.example/agl/ MI
 : > "$t/mirror.log"; run git; rc=$?
 if [ "$rc" -eq 0 ] && grep -q "git-refresh SOURCES= MIRROR_ROOT=$t/root" "$t/mirror.log"; then ok "git: git-refresh with the server tree"; else bad "git: rc=$rc $(cat "$t/mirror.log")"; fi
 
-# 3. nightly and the cleanups still go to the release log
-: > "$t/release.log"; run nightly; run nightly cleanup; run cleanup
-if grep -q 'pull-sync SOURCES=rsync://builder.example/agl/ MIRROR_ROOT=.* AREAS=nightly' "$t/release.log" && grep -q 'cleanup-nightly called' "$t/release.log" && grep -q 'cleanup-staging called' "$t/release.log"; then ok "nightly, nightly cleanup and cleanup are unchanged and log to the release log"; else bad "release log: $(cat "$t/release.log")"; fi
+# 3. the nightly pull runs every minute and logs to the mirror log; the cleanups go to the release log
+: > "$t/release.log"; : > "$t/mirror.log"; run nightly; run nightly cleanup; run cleanup
+if grep -q 'pull-sync SOURCES=rsync://builder.example/agl/ MIRROR_ROOT=.* AREAS=nightly' "$t/mirror.log"; then ok "nightly: pulls the nightly area, in the mirror log"; else bad "mirror log: $(cat "$t/mirror.log")"; fi
+if grep -q 'cleanup-nightly called' "$t/release.log" && grep -q 'cleanup-staging called' "$t/release.log"; then ok "both cleanups log to the release log"; else bad "release log: $(cat "$t/release.log")"; fi
 
 # 4. an unknown word is refused with the usage text
 run bogus > "$t/out" 2>&1; rc=$?

@@ -12,6 +12,7 @@ ok() { echo "ok:   $*"; }
 bad() { echo "FAIL: $*"; fails=$((fails + 1)); }
 
 M=qemux86-64
+C=0123456789012345678901234567890123456789
 # mkdeploy TREE TARGET KERNEL-TEXT: a deploy directory for TARGET, same shape release-collect_test.sh uses.
 mkdeploy() {
   local tree="$1" target="$2" kernel="$3" d="$1/build/tmp/deploy/images/$M"
@@ -28,50 +29,54 @@ mkdeploy() {
 }
 collect() {
   local tree="$1" target="$2"; shift 2
-  env AGL_TREE="$tree" NIGHTLY_STAGING="$t/stage" NIGHTLY_DATE=2026-11-26-0300 NIGHTLY_RUN_ID=run1 "$@" \
+  env AGL_TREE="$tree" NIGHTLY_STAGING="$t/stage" NIGHTLY_DATE=2026-11-26-0300 NIGHTLY_RUN_ID=run1 NIGHTLY_COMMIT="$C" \
+    NIGHTLY_RUN_URL=https://example.org/actions/runs/1 "$@" \
     "$tool" --machine "$M" --target "$target" --repo meta-agl 2>&1
 }
 
-# 1. A normal collect: the image's files and the shared kernel land in the per-repo/machine layout.
+# 1. A normal collect: one public folder per image, complete, with build.toml and the sums file.
 mkdeploy "$t/tree1" agl-image-minimal kernel-A
 out="$(collect "$t/tree1" agl-image-minimal)"; rc=$?
-dest="$t/stage/.2026-11-26-0300.partial/meta-agl/$M/deploy/images/$M"
+run="$t/stage/2026-11-26-0300"
+dest="$run/meta-agl/$M/agl-image-minimal"
 if [ "$rc" -eq 0 ]; then ok "a normal collect runs"; else bad "collect failed: $out"; fi
-if [ -f "$dest/agl-image-minimal-$M.ext4.xz" ] && [ -f "$dest/bzImage-$M.bin" ]; then ok "the image's own file and the shared kernel are collected"; else bad "files missing in $dest"; fi
+if [ -f "$dest/agl-image-minimal-$M.ext4.xz" ] && [ ! -L "$dest/agl-image-minimal-$M.ext4.xz" ] && [ -f "$dest/bzImage-$M.bin" ]; then ok "the image's own file and the kernel are public at once"; else bad "files missing in $dest"; fi
 if [ ! -e "$dest/other-image-$M.ext4.xz" ] && [ ! -e "$dest/junk" ]; then ok "another image's file and a plain directory are not collected"; else bad "unwanted entries collected"; fi
+if grep -qx 'repo = "meta-agl"' "$dest/build.toml" && grep -qx "commit = \"$C\"" "$dest/build.toml" && grep -qx 'run = "https://example.org/actions/runs/1"' "$dest/build.toml"; then ok "build.toml names repo, commit and run"; else bad "build.toml wrong"; fi
+if (cd "$dest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2>&1) && grep -q ' build.toml$' "$dest/agl-image-minimal.SHA256SUMS" && ! grep -q 'SHA256SUMS' "$dest/agl-image-minimal.SHA256SUMS"; then ok "the sums file verifies, lists build.toml and not itself"; else bad "sums file wrong"; fi
+if [ -z "$(find "$t/stage/.2026-11-26-0300.partial" -name '*.xz')" ] && [ ! -e "$run/COMPLETE" ]; then ok "nothing is left in the work directory and the run is not marked complete"; else bad "work files left, or COMPLETE written"; fi
 
-# 2. report-trowl/ (the class trowl) and report-vulnscout/ (the vulnscout step), both whole directories:
-#    collected recursively.
-mkdeploy "$t/tree2" agl-ivi-demo-flutter kernel-A
-mkdir -p "$t/tree2/build/tmp/deploy/images/$M/report-trowl" "$t/tree2/build/tmp/deploy/images/$M/report-vulnscout"
-echo '<html></html>' > "$t/tree2/build/tmp/deploy/images/$M/report-trowl/index.html"
-echo '{}' > "$t/tree2/build/tmp/deploy/images/$M/report-trowl/report.json"
-echo 'summary' > "$t/tree2/build/tmp/deploy/images/$M/report-vulnscout/summary.adoc"
+# 2. A second image of the same machine with a DIFFERENT kernel and both scanner reports: its own folder, its own kernel.
+mkdeploy "$t/tree2" agl-ivi-demo-flutter kernel-B
+d2="$t/tree2/build/tmp/deploy/images/$M"
+mkdir -p "$d2/report-trowl" "$d2/report-vulnscout"
+echo '<html></html>' > "$d2/report-trowl/index.html"; echo 'summary' > "$d2/report-vulnscout/summary.adoc"
 out="$(collect "$t/tree2" agl-ivi-demo-flutter)"; rc=$?
-dest2="$t/stage/.2026-11-26-0300.partial/meta-agl/$M/deploy/images/$M"
-if [ -f "$dest2/report-trowl/index.html" ] && [ -f "$dest2/report-trowl/report.json" ]; then ok "report-trowl/ is collected recursively"; else bad "report-trowl/ missing: $out"; fi
-if [ -f "$dest2/report-vulnscout/summary.adoc" ]; then ok "report-vulnscout/ is collected recursively"; else bad "report-vulnscout/ missing: $out"; fi
+dest2="$run/meta-agl/$M/agl-ivi-demo-flutter"
+if [ "$rc" -eq 0 ] && grep -qx kernel-B "$dest2/bzImage-$M.bin" && grep -qx kernel-A "$dest/bzImage-$M.bin"; then ok "two images of one machine keep their own kernel"; else bad "second image: $out"; fi
+if [ -f "$dest2/report-trowl/index.html" ] && grep -q ' report-vulnscout/summary.adoc$' "$dest2/agl-ivi-demo-flutter.SHA256SUMS"; then ok "the scanner reports are collected and listed"; else bad "reports missing: $out"; fi
 
-# 3. A shared kernel file that disagrees with what is already collected: refused.
-mkdeploy "$t/tree3" third-image kernel-B
-out="$(collect "$t/tree3" third-image)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'disagree'; then ok "a different kernel in the same nightly is refused"; else bad "kernel conflict accepted: $out"; fi
+# 3. The same image twice in one run: refused.
+out="$(collect "$t/tree1" agl-image-minimal)"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already in the nightly'; then ok "the same image twice is refused"; else bad "duplicate accepted: $out"; fi
 
-# 4. A partial directory of ANOTHER run: refused.
-mkdeploy "$t/tree4" agl-image-minimal kernel-A
-out="$(collect "$t/tree4" agl-image-minimal NIGHTLY_RUN_ID=run2)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'belongs to run run1'; then ok "a partial directory of another run is refused"; else bad "foreign partial accepted: $out"; fi
+# 4. A directory of ANOTHER run: refused.
+mkdeploy "$t/tree4" third-image kernel-A
+out="$(collect "$t/tree4" third-image NIGHTLY_RUN_ID=run2)"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'belongs to run run1'; then ok "a directory of another run is refused"; else bad "foreign run accepted: $out"; fi
 
-# 5. The final directory already exists (finalize already ran): refused.
-mkdir -p "$t/stage/2026-11-26-0400"
-out="$(collect "$t/tree4" agl-image-minimal NIGHTLY_DATE=2026-11-26-0400)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already exists'; then ok "an already-finalized date is refused"; else bad "existing final dir accepted: $out"; fi
+# 5. A complete nightly: refused.
+mkdir -p "$t/stage/2026-11-26-0400"; : > "$t/stage/2026-11-26-0400/COMPLETE"
+out="$(collect "$t/tree4" third-image NIGHTLY_DATE=2026-11-26-0400)"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already complete'; then ok "a complete nightly is refused"; else bad "complete nightly accepted: $out"; fi
 
 # 6. Missing input / bad names.
 out="$(collect "$t/nowhere" agl-image-minimal NIGHTLY_DATE=2026-11-26-0500)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'no deploy directory'; then ok "a missing deploy directory is refused"; else bad "missing deploy directory accepted"; fi
-out="$(collect "$t/tree4" agl-image-minimal NIGHTLY_DATE=bad-date 2>&1)"; rc=$?
+out="$(collect "$t/tree4" third-image NIGHTLY_DATE=bad-date)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad NIGHTLY_DATE'; then ok "a bad date format is refused"; else bad "bad date accepted: $out"; fi
+out="$(collect "$t/tree4" third-image NIGHTLY_COMMIT=abc)"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad NIGHTLY_COMMIT'; then ok "a short commit is refused"; else bad "bad commit accepted: $out"; fi
 out="$("$tool" --machine '../x' --target t --repo meta-agl 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a path in the machine name is refused"; else bad "path in machine name accepted"; fi
 

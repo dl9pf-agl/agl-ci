@@ -39,7 +39,7 @@ if [ "$rc" -eq 0 ] && [ "$out" = "KAS_RUN build kas/base.yml:kas/pins.yml" ]; th
 
 # Case 2: a release build. kas gets --provenance mode=min, --target and the extra fragment; docker runs the collect script.
 tree="$t/release"; mkdir -p "$tree"
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/srv/agl-cache/sstate KAS_CONTAINER_IMAGE=builder@sha256:abc GITHUB_RUN_ID=77)"; rc=$?
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/srv/agl-cache/sstate KAS_CONTAINER_IMAGE=builder@sha256:abc GITHUB_RUN_ID=77)"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "a release build runs"; else bad "release build failed: $out"; fi
 kas_line="$(grep '^KAS_RUN' <<<"$out")"
 if [ "$kas_line" = "KAS_RUN build --provenance mode=min --target agl-image-minimal kas/base.yml:kas/pins.yml:build/ci-kas/provenance.yml" ]; then ok "kas gets mode=min, --target and the provenance fragment"; else bad "wrong kas call: $kas_line"; fi
@@ -47,7 +47,7 @@ if grep -q '^  manifest: tmp/deploy/images/qemux86-64/agl-image-minimal-qemux86-
 docker_line="$(grep '^DOCKER' <<<"$out")"
 want_parts=("run --rm --user 0" "-v $tree:$tree:ro" "-v /ci/scripts:/ci/scripts:ro" "-v /srv/agl-cache/staging/release:/srv/agl-cache/staging/release "
   "-v $tree/build/release-small:$tree/build/release-small" "-e AGL_TREE=$tree" "-e RELEASE_STAGING=/srv/agl-cache/staging/release" "-e RELEASE_BRANCH -e RELEASE_VERSION"
-  "--entrypoint /bin/bash builder@sha256:abc /ci/scripts/release-collect.sh --machine qemux86-64 --target agl-image-minimal")
+  "--entrypoint /bin/bash builder@sha256:abc /ci/scripts/release-collect.sh --machine qemux86-64 --target agl-image-minimal --repo meta-agl")
 missing=""
 for p in "${want_parts[@]}"; do case "$docker_line" in *"$p"*) ;; *) missing="$missing [$p]" ;; esac; done
 if [ -z "$missing" ]; then ok "docker run has the mounts, the environment and the collect command (staging derived from AGL_SSTATE_DIR)"; else bad "docker call lacks:$missing -- got: $docker_line"; fi
@@ -55,18 +55,20 @@ if [ -d "$tree/build/release-small" ]; then ok "the small-file directory is crea
 
 # Case 3: RELEASE_STAGING overrides the derived path.
 tree="$t/staging"; mkdir -p "$tree"
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 RELEASE_STAGING=/data/rel KAS_CONTAINER_IMAGE=b)"
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 RELEASE_STAGING=/data/rel KAS_CONTAINER_IMAGE=b)"
 if grep -q -e '-v /data/rel:/data/rel ' <<<"$out"; then ok "RELEASE_STAGING is honoured"; else bad "RELEASE_STAGING ignored: $out"; fi
 
 # Case 4: refusals. Each must stop with a non-zero exit and say why.
 tree="$t/refuse"; mkdir -p "$tree"
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba KAS_CONTAINER_IMAGE=b AGL_SSTATE_DIR=/c/sstate)"; rc=$?
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba KAS_CONTAINER_IMAGE=b AGL_SSTATE_DIR=/c/sstate)"; rc=$?
 if [ "$rc" -ne 0 ] && grep -q 'RELEASE_VERSION is not set' <<<"$out"; then ok "a release without RELEASE_VERSION is refused"; else bad "missing version accepted: $out"; fi
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 KAS_EXEC=kas KAS_CONTAINER_IMAGE=b AGL_SSTATE_DIR=/c/sstate)"; rc=$?
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 KAS_EXEC=kas KAS_CONTAINER_IMAGE=b AGL_SSTATE_DIR=/c/sstate)"; rc=$?
 if [ "$rc" -ne 0 ] && grep -q 'needs KAS_EXEC=kas-container' <<<"$out"; then ok "a release with KAS_EXEC=kas is refused"; else bad "KAS_EXEC=kas accepted: $out"; fi
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 KAS_CONTAINER_IMAGE=b)"; rc=$?
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 KAS_CONTAINER_IMAGE=b)"; rc=$?
 if [ "$rc" -ne 0 ] && grep -q 'AGL_SSTATE_DIR is not set' <<<"$out"; then ok "a host without cache directory is refused"; else bad "missing cache directory accepted: $out"; fi
-out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/c/sstate)"; rc=$?
+out="$(run_blocks "$tree" AGL_RELEASE=1 IMAGE_REPO=meta-agl RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/c/sstate)"; rc=$?
 if [ "$rc" -ne 0 ] && grep -q 'KAS_CONTAINER_IMAGE is not set' <<<"$out"; then ok "a missing builder image is refused"; else bad "missing image accepted: $out"; fi
+out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/c/sstate KAS_CONTAINER_IMAGE=b)"; rc=$?
+if [ "$rc" -ne 0 ] && grep -q 'IMAGE_REPO is not set' <<<"$out"; then ok "a release without IMAGE_REPO is refused"; else bad "missing IMAGE_REPO accepted: $out"; fi
 
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

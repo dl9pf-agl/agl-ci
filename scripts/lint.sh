@@ -20,6 +20,9 @@ run kit/mirror/git-refresh_test.sh   # the git mirror refresh of the download se
 run kit/release/run_test.sh   # the cron entry of the download server: which script each word calls and where it logs (stubs)
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
+run ci/scripts/nightly-collect_test.sh   # one public folder per nightly image, build.toml, sums, and what is refused
+run ci/scripts/nightly-finalize_test.sh   # the COMPLETE marker of a nightly, and what happens to leftovers
+run ci/scripts/nightly-build_test.sh   # the docker call of the nightly collect step (stub)
 run ci/scripts/release-collect_test.sh   # which files of an image go into a release, the sums file, and what is refused (release process)
 run ci/scripts/release-build_test.sh   # the commands of a release build (kas flags, docker mounts) with stubs, and that a normal build is unchanged
 run python3 ci/scripts/release-check_test.py   # the kas statement of a release image against the pins file: each fault must fail (needs PyYAML)

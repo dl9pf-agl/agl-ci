@@ -49,13 +49,13 @@ def statement(target, dirty=False):
 import os
 for variant, targets in (("small", ["img1", "img2"]), ("dirty", ["img1", "img2"])):
     for target in targets:
-        d = f"{t}/{variant}/{M}/deploy/images/{M}"
+        d = f"{t}/{variant}/meta-agl/{M}/{target}"
         os.makedirs(d, exist_ok=True)
         stmt = json.dumps(statement(target, dirty=(variant == "dirty" and target == "img2")), indent=1).encode()
         open(f"{d}/{target}.provenance.json", "wb").write(stmt)
         open(f"{d}/{target}.SHA256SUMS", "w").write(f"{hashlib.sha256(stmt).hexdigest()}  {target}.provenance.json\n{'b' * 64}  {target}-{M}.ext4.xz\n")
 EOF
-matrix='{"include":[{"machine":"qemux86-64","target":"img1"},{"machine":"qemux86-64","target":"img2"}]}'
+matrix='{"include":[{"repo":"meta-agl","machine":"qemux86-64","target":"img1"},{"repo":"meta-agl","machine":"qemux86-64","target":"img2"}]}'
 attest() {   # attest SMALL OUT [extra args]: run the tool with the key
   local small="$1" out="$2"; shift 2
   env COSIGN="$cosign" COSIGN_SIGN_ARGS="$sign_args" COSIGN_VERIFY_ARGS="$verify_args" "$tool" --small "$small" --pins "$pins" \
@@ -65,8 +65,8 @@ attest() {   # attest SMALL OUT [extra args]: run the tool with the key
 # 1. Good case.
 out="$(attest "$t/small" "$t/out1")"; rc=$?
 if [ "$rc" -eq 0 ]; then ok "two images are attested and the top level is signed"; else bad "good case refused: $out"; fi
-o="$t/out1"; d="$o/$M/deploy/images/$M"
-if [ -f "$d/img1.slsa.intoto.bundle" ] && [ -f "$d/img2.slsa.intoto.bundle" ] && [ -f "$o/SHA256SUMS" ] && [ -f "$o/SHA256SUMS.bundle" ] && [ -f "$o/pins_testrel_0.0.1.yml" ]; then ok "bundles, top-level files and pins file are in the output"; else bad "output files missing"; fi
+o="$t/out1"; d="$o/meta-agl/$M/img1"; d2="$o/meta-agl/$M/img2"
+if [ -f "$d/img1.slsa.intoto.bundle" ] && [ -f "$d2/img2.slsa.intoto.bundle" ] && [ -f "$o/SHA256SUMS" ] && [ -f "$o/SHA256SUMS.bundle" ] && [ -f "$o/pins_testrel_0.0.1.yml" ]; then ok "bundles, top-level files and pins file are in the output"; else bad "output files missing"; fi
 if [ -f "$d/img1.SHA256SUMS" ] && [ -f "$d/img1.provenance.json" ]; then ok "the sums files and statements are passed on"; else bad "sums or statements missing in the output"; fi
 # What was made verifies independently of the script, with the public key.
 # shellcheck disable=SC2086
@@ -97,14 +97,16 @@ if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'does not match the pins file'; then
 if [ -e "$t/out2/SHA256SUMS" ] || [ -e "$t/out2/SHA256SUMS.bundle" ]; then bad "a top-level file was written although a statement failed"; else ok "no top-level file was written"; fi
 
 # 4. Missing input and bad arguments.
-out="$(attest "$t/small" "$t/out3" --matrix '{"include":[{"machine":"qemux86-64","target":"img3"}]}')"; rc=$?
+out="$(attest "$t/small" "$t/out3" --matrix '{"include":[{"repo":"meta-agl","machine":"qemux86-64","target":"img3"}]}')"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'missing'; then ok "an image without files is refused"; else bad "missing image files accepted: $out"; fi
 out="$(attest "$t/small" "$t/out4" --matrix 'not json')"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a matrix that is not JSON is refused"; else bad "bad matrix accepted"; fi
 out="$(attest "$t/small" "$t/out1")"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'does not exist yet'; then ok "an existing output directory is refused"; else bad "existing output accepted: $out"; fi
-out="$(attest "$t/small" "$t/out5" --matrix '{"include":[{"machine":"../x","target":"img1"}]}')"; rc=$?
+out="$(attest "$t/small" "$t/out5" --matrix '{"include":[{"repo":"meta-agl","machine":"../x","target":"img1"}]}')"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad names'; then ok "a path in a matrix name is refused"; else bad "bad name accepted: $out"; fi
+out="$(attest "$t/small" "$t/out7" --matrix '{"include":[{"machine":"qemux86-64","target":"img1"}]}')"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad names'; then ok "a matrix entry without repo is refused"; else bad "missing repo accepted: $out"; fi
 out="$(attest "$t/small" "$t/out6" --version 1.2)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad --version'; then ok "a short version is refused"; else bad "bad version accepted"; fi
 

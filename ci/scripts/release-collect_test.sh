@@ -38,10 +38,10 @@ mkdeploy() {
 collect() {
   local tree="$1" target="$2"; shift 2
   env AGL_TREE="$tree" RELEASE_STAGING="$t/stage" RELEASE_BRANCH=testrel RELEASE_VERSION=0.0.1 "$@" \
-    "$tool" --machine "$M" --target "$target" 2>&1
+    "$tool" --machine "$M" --target "$target" --repo meta-agl 2>&1
 }
 part="$t/stage/testrel/0.0.1"
-dest="$part/$M/deploy/images/$M"
+dest="$part/meta-agl/$M/agl-image-minimal"
 
 # 1. Good case: the first image of the release.
 mkdeploy "$t/tree1" agl-image-minimal kernel-A
@@ -60,20 +60,15 @@ if (cd "$dest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2
 if grep -q ' agl-image-minimal.provenance.json$' "$dest/agl-image-minimal.SHA256SUMS"; then ok "the kas statement is listed in the sums"; else bad "statement not in the sums"; fi
 if grep -q 'SHA256SUMS' "$dest/agl-image-minimal.SHA256SUMS"; then bad "the sums file lists itself"; else ok "the sums file does not list itself"; fi
 # The two small files for the upload exist in the same relative layout.
-small="$t/tree1/build/release-small/$M/deploy/images/$M"
+small="$t/tree1/build/release-small/meta-agl/$M/agl-image-minimal"
 if [ -f "$small/agl-image-minimal.SHA256SUMS" ] && [ -f "$small/agl-image-minimal.provenance.json" ]; then ok "small files copied for the upload"; else bad "small files missing"; fi
 
-# 2. A second image of the same machine with the SAME kernel: allowed, the shared files are not copied twice.
-mkdeploy "$t/tree2" other-image kernel-A
+# 2. A second image of the same machine with a DIFFERENT kernel: its own folder with its own kernel.
+mkdeploy "$t/tree2" other-image kernel-B
 out="$(collect "$t/tree2" other-image)"; rc=$?
-if [ "$rc" -eq 0 ]; then ok "second image of the machine is collected"; else bad "second image refused: $out"; fi
-if [ -f "$dest/other-image.SHA256SUMS" ] && [ -f "$dest/agl-image-minimal.SHA256SUMS" ]; then ok "both sums files side by side"; else bad "sums files missing"; fi
-if grep -q ' bzImage-qemux86-64.bin$' "$dest/other-image.SHA256SUMS"; then ok "the shared kernel is listed in the second image's sums"; else bad "shared kernel not listed"; fi
-
-# 3. A third image whose kernel DIFFERS from the one already in the release: must be refused (two images disagree).
-mkdeploy "$t/tree3" third-image kernel-B
-out="$(collect "$t/tree3" third-image)"; rc=$?
-if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'disagree'; then ok "a different kernel in the same release is refused"; else bad "kernel conflict accepted: $out"; fi
+d2="$part/meta-agl/$M/other-image"
+if [ "$rc" -eq 0 ] && grep -qx kernel-B "$d2/bzImage-$M.bin" && grep -qx kernel-A "$dest/bzImage-$M.bin"; then ok "two images of one machine keep their own kernel"; else bad "second image refused: $out"; fi
+if grep -q ' bzImage-qemux86-64.bin$' "$d2/other-image.SHA256SUMS"; then ok "the kernel is listed in the second image's sums"; else bad "kernel not listed"; fi
 
 # 4. The same image twice in one release: refused.
 out="$(collect "$t/tree1" agl-image-minimal)"; rc=$?
@@ -83,13 +78,18 @@ if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'already collected'; then ok "the sa
 #    kernel that differs between the hosts is not seen here (promote.sh sees it: the sums of one image would not match).
 mkdeploy "$t/tree4" other-host-image kernel-B
 out="$(collect "$t/tree4" other-host-image RELEASE_STAGING="$t/stage2")"; rc=$?
-if [ "$rc" -eq 0 ] && [ -f "$t/stage2/testrel/0.0.1/$M/deploy/images/$M/other-host-image.SHA256SUMS" ] && [ ! -e "$t/stage2/testrel/0.0.1/$M/deploy/images/$M/agl-image-minimal.SHA256SUMS" ]; then ok "an image on another host collects into that host's own staging area"; else bad "second host: $out"; fi
+if [ "$rc" -eq 0 ] && [ -f "$t/stage2/testrel/0.0.1/meta-agl/$M/other-host-image/other-host-image.SHA256SUMS" ] && [ ! -e "$t/stage2/testrel/0.0.1/meta-agl/$M/agl-image-minimal" ]; then ok "an image on another host collects into that host's own staging area"; else bad "second host: $out"; fi
 
-# 6. A leftover of a failed attempt (files, but no sums file): accepted when identical, so a rerun of the job works.
+# 6. A leftover of a failed attempt (files, but no sums file): accepted when identical, so a rerun of the job works; different
+#    content is refused.
 mkdeploy "$t/tree7" rerun-image kernel-A
-collect "$t/tree7" rerun-image > /dev/null 2>&1; rm "$dest/rerun-image.SHA256SUMS"
+d7="$part/meta-agl/$M/rerun-image"
+collect "$t/tree7" rerun-image > /dev/null 2>&1; rm "$d7/rerun-image.SHA256SUMS"
 out="$(collect "$t/tree7" rerun-image)"; rc=$?
-if [ "$rc" -eq 0 ] && [ -f "$dest/rerun-image.SHA256SUMS" ]; then ok "the rerun of a failed collect works"; else bad "rerun refused: $out"; fi
+if [ "$rc" -eq 0 ] && [ -f "$d7/rerun-image.SHA256SUMS" ]; then ok "the rerun of a failed collect works"; else bad "rerun refused: $out"; fi
+rm "$d7/rerun-image.SHA256SUMS"; echo changed > "$d7/bzImage"
+out="$(collect "$t/tree7" rerun-image)"; rc=$?
+if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'different content'; then ok "a leftover with other content is refused"; else bad "changed leftover accepted: $out"; fi
 
 # 7. Missing input: no kas statement, no deploy directory, no file of the target.
 mkdeploy "$t/tree5" agl-image-minimal kernel-A; rm "$t/tree5/build/attestation/kas-build.provenance.json"
@@ -106,7 +106,7 @@ out="$(collect "$t/tree6" agl-image-minimal RELEASE_BRANCH=Vimba RELEASE_VERSION
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad RELEASE_BRANCH'; then ok "an upper case branch is refused"; else bad "bad branch accepted"; fi
 out="$(collect "$t/tree6" agl-image-minimal RELEASE_VERSION=1.2)"; rc=$?
 if [ "$rc" -ne 0 ] && echo "$out" | grep -q 'bad RELEASE_VERSION'; then ok "a short version is refused"; else bad "bad version accepted"; fi
-out="$("$tool" --machine '../x' --target t 2>&1)"; rc=$?
+out="$("$tool" --machine '../x' --target t --repo meta-agl 2>&1)"; rc=$?
 if [ "$rc" -ne 0 ]; then ok "a path in the machine name is refused"; else bad "path in machine name accepted"; fi
 # None of the refused calls above (versions 0.0.3, 0.0.4) may have created a release directory.
 left=0; for v in 0.0.3 0.0.4; do [ ! -e "$t/stage/testrel/$v" ] || left=1; done
@@ -121,7 +121,7 @@ echo '<html></html>' > "$t/tree8/build/tmp/deploy/images/$M/report-trowl/index.h
 echo '{}' > "$t/tree8/build/tmp/deploy/images/$M/report-trowl/report.json"
 echo 'summary' > "$t/tree8/build/tmp/deploy/images/$M/report-vulnscout/summary.adoc"
 out="$(collect "$t/tree8" agl-image-minimal RELEASE_VERSION=0.0.5)"; rc=$?
-tdest="$t/stage/testrel/0.0.5/$M/deploy/images/$M"
+tdest="$t/stage/testrel/0.0.5/meta-agl/$M/agl-image-minimal"
 if [ "$rc" -eq 0 ] && [ -f "$tdest/report-trowl/index.html" ] && [ -f "$tdest/report-trowl/report.json" ] && [ -f "$tdest/report-vulnscout/summary.adoc" ]; then
   ok "report-trowl/ and report-vulnscout/ are collected recursively"
 else bad "report-trowl/ or report-vulnscout/ missing or collect failed: $out"; fi

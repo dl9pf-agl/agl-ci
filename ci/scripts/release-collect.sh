@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Collect the files of ONE release image into the release staging directory of the builder.
 #
-#   release-collect.sh --machine <machine> --target <target>
+#   release-collect.sh --machine <machine> --target <target> --repo <repo>
 #
 # Environment (all required unless a default is named):
 #   AGL_TREE          the build tree of the job (agl-ucb checkout); the deploy output is $AGL_TREE/build/tmp/deploy/images/<machine>
@@ -19,8 +19,8 @@
 # Flow, in the order it runs:
 #   1. check the arguments and the environment (names end up in paths, so they are strict)
 #   2. guard                                 (the image was already collected here: refuse)
-#   3. select the files                      (the image's own plain-named files, plus the machine's shared kernel and boot files)
-#   4. copy them into the release directory  (links resolved; a shared file that already exists must be byte-identical)
+#   3. select the files                      (the image's own plain-named files, plus the machine's kernel and boot files)
+#   4. copy them into <repo>/<machine>/<target>/ (links resolved; a file left by a failed attempt must be byte-identical)
 #   5. write <target>.SHA256SUMS             (hashes of everything of this image, including its kas statement)
 #   6. copy the two small files to RELEASE_SMALL_DIR (the sums and the statement, for the artifact upload)
 # The images of one release may be built on DIFFERENT hosts: each host collects its own images into its own staging area, and the
@@ -32,12 +32,13 @@ set -euo pipefail
 die() { echo "release-collect: $*" >&2; exit 1; }
 
 # 1. Arguments and environment.
-machine=""; target=""
+machine=""; target=""; repo=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --machine) machine="${2:-}"; shift 2 ;;
     --target)  target="${2:-}";  shift 2 ;;
-    *) die "unknown argument: $1 (usage: release-collect.sh --machine <machine> --target <target>)" ;;
+    --repo)    repo="${2:-}";    shift 2 ;;
+    *) die "unknown argument: $1 (usage: release-collect.sh --machine <machine> --target <target> --repo <repo>)" ;;
   esac
 done
 tree="${AGL_TREE:?AGL_TREE is not set}"
@@ -48,13 +49,14 @@ small="${RELEASE_SMALL_DIR:-$tree/build/release-small}"
 # Names go into paths and into glob patterns below: only plain names are accepted.
 [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --machine: '$machine'"
 [[ "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --target: '$target'"
+[[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --repo: '$repo'"
 [[ "$branch" =~ ^[a-z]+$ ]] || die "bad RELEASE_BRANCH: '$branch'"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "bad RELEASE_VERSION: '$version'"
 
 deploy="$tree/build/tmp/deploy/images/$machine"        # what bitbake deployed for this machine in this job
 stmt="$tree/build/attestation/kas-build.provenance.json" # written by kas build --provenance
 part="$staging/$branch/$version"                        # the release directory of this host: the images collected HERE
-dest="$part/$machine/deploy/images/$machine"            # the public layout: <machine>/deploy/images/<machine>/
+dest="$part/$repo/$machine/$target"                     # the public layout: one folder per image
 [ -d "$deploy" ] || die "no deploy directory $deploy (did the build run?)"
 [ -f "$stmt" ] || die "no kas statement $stmt (build with --provenance)"
 
@@ -66,8 +68,7 @@ dest="$part/$machine/deploy/images/$machine"            # the public layout: <ma
 # 3. Select the files. All patterns are relative to the deploy directory.
 #    own     <target>-<machine>.*   the image's files with their plain names (ext4.xz, wic.zst, manifest, spdx.json, ...). The
 #                                   dot after the machine name keeps out the timestamped copies (<target>-<machine>-2026....)
-#    shared  kernel and boot files that every image of the machine uses; they are written once per machine, and every image's
-#            sums file lists them. This list is the FIRST GUESS for the file list (decision 4 of the design, to be revisited);
+#    shared  the kernel and boot files of the machine; every image folder gets its own copy. This list is the FIRST GUESS for the file list (decision 4 of the design, to be revisited);
 #            files that match nothing are reported below so that a missing kind of file is noticed.
 own_pattern="${target}-${machine}.*"
 shared_patterns=("*Image-${machine}.bin" "*Image" "*.efi" "*.efi.stub" "*.dtb")
@@ -89,20 +90,19 @@ select_files own "$own_pattern"
 [ "${#names[@]}" -gt 0 ] || die "no file $own_pattern in $deploy: is '$target' the image that was built for '$machine'?"
 select_files shared "${shared_patterns[@]}"
 
-# 4. Copy. First create the directories and record this run's id in the hidden marker (the guard of step 2 compares against it).
-#    cp -L follows the plain-name links, so the release holds the real files under the plain names. A file is first copied to
-#    <name>.tmp and then renamed, so that no half-written file ever has its final name. A shared file that is already there (copied
-#    by another image of the same machine) must be byte-identical, otherwise two images disagree about the kernel: fail.
+# 4. Copy. cp -L follows the plain-name links, so the release holds the real files under the plain names. A file is first copied to
+#    <name>.tmp and then renamed, so that no half-written file ever has its final name. A file that is already there is the leftover
+#    of a failed attempt of this image: it must be byte-identical.
 mkdir -p "$dest"
 for f in "${names[@]}"; do
   if [ -e "$dest/$f" ]; then
-    cmp -s "$deploy/$f" "$dest/$f" || die "'$f' is already in the release with different content (two images of $machine disagree)"
+    cmp -s "$deploy/$f" "$dest/$f" || die "'$f' is already in the release with different content (an earlier attempt of $target built other files)"
     continue
   fi
   cp -L --preserve=timestamps "$deploy/$f" "$dest/$f.tmp"
   mv "$dest/$f.tmp" "$dest/$f"
 done
-# The kas statement of this image, under a name that belongs to the target (several images share one directory).
+# The kas statement of this image, under a name that belongs to the target.
 cp "$stmt" "$dest/$target.provenance.json"
 names+=("$target.provenance.json")
 
@@ -127,12 +127,12 @@ done
 mv "$dest/$target.SHA256SUMS.tmp" "$dest/$target.SHA256SUMS"
 
 # 6. The small files for the attest job: the sums and the statement, in the same relative layout. About 30 KB per image.
-mkdir -p "$small/$machine/deploy/images/$machine"
-cp "$dest/$target.SHA256SUMS" "$dest/$target.provenance.json" "$small/$machine/deploy/images/$machine/"
+mkdir -p "$small/$repo/$machine/$target"
+cp "$dest/$target.SHA256SUMS" "$dest/$target.provenance.json" "$small/$repo/$machine/$target/"
 
 # Report: what went in, and what was left out (so that a kind of file that should be in the release does not go missing unseen).
 total="$(cd "$dest" && du -ch -- "${names[@]}" | tail -n 1 | cut -f1)"
-echo "release-collect: $target on $machine: ${#names[@]} files, $total, into $part"
+echo "release-collect: $target on $machine ($repo): ${#names[@]} files, $total, into $dest"
 others=()
 for f in "$deploy"/*; do
   [ -z "${seen[${f##*/}]:-}" ] || continue      # selected files are in $seen; everything else is reported

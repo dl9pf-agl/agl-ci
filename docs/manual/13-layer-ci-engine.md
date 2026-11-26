@@ -111,17 +111,21 @@ job log. To revive: remove the `# ` prefix of the step and of the copy in `build
 ## Nightly publishing (2026-11-25)
 Nightly images bypass GitHub Actions storage entirely instead of reviving it: `AGL_NIGHTLY=1` (set by `layer-ci.yml`'s `build`
 job for the nightly tier only) makes the step `collect` (`ci/scripts/collect.sh`, after the build and the scan step) call
-`ci/scripts/nightly-collect.sh`, which copies the image into
-`NIGHTLY_STAGING/.<date>.partial/<repo>/<machine>/deploy/images/<machine>/` on the builder's own cache directory (same
-root-in-a-container arrangement as `release-collect.sh`, same cache-directory permission reason). A new `nightly-finalize` job
-renames `.partial` to `<date>` once every build job of the run is done, so the download server's pull (`kit/mirror/pull-sync.sh`,
-new `AREAS=nightly` cron line) never sees a half-written run. No signing, no SHA256SUMS: nobody downstream verifies a nightly.
+`ci/scripts/nightly-collect.sh` (same root-in-a-container arrangement as `release-collect.sh`, same cache-directory permission
+reason). It builds the image folder in the hidden `NIGHTLY_STAGING/.<date>.partial/` and then moves it, in one rename, to
+`NIGHTLY_STAGING/<date>/<repo>/<machine>/<target>/`. So an image is public as soon as its own build is done (2026-11-26: a test
+lab waits for it; before, the run was published as a whole, when the slowest image was done). The folder holds everything of one
+image: its files, the kernel and boot files, `report-trowl/`, `report-vulnscout/`, `build.toml` (repo, commit, run address) and
+`<target>.SHA256SUMS`. The job `nightly-finalize` writes `<date>/COMPLETE` once every build job of the run succeeded; a run with a
+failed image publishes the others and never gets the marker. The download server pulls every minute
+(`kit/release/run.sh nightly`). **A consumer (LAVA) takes the full URL of the image folder, waits until the sums file is there
+and verifies the files against it, and retries if that fails.** No signing: the sums file only says that a download is whole.
 Served at the download server's top level, `/nightly/<date>/...` (own nginx location, own mount in `kit/mirror/run.sh`, kept
 apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHTLY_KEEP_DAYS` (default 7) by
-`kit/release/cleanup-nightly.sh`, same cron chain; the builder's own copy goes after 7 days by `kit/prune-builder.sh` (cron, chapter 15), as do a staged release and an
-abandoned `.partial` directory (4 days). The folder below the date is the repo that **owns the image** (the matrix entry's `repo`, passed as
-`NIGHTLY_REPO`), not the repo whose cron started the run: the nightly of meta-agl also builds the images of meta-agl-demo and meta-agl-devel, and two
-images of one machine in one folder would disagree about the shared kernel files (found by the first scheduled nightly, 2026-11-26).
+`kit/release/cleanup-nightly.sh`, same cron file; the builder's own copy goes after 7 days by `kit/prune-builder.sh` (cron, chapter 15), as do a staged release and an
+abandoned `.partial` directory (4 days). `<repo>` is the repository that **owns the image** (the matrix entry's `repo`, passed as
+`IMAGE_REPO`), not the repository whose cron started the run: the nightly of meta-agl also builds the images of meta-agl-demo and
+meta-agl-devel.
 
 ## Scans: trowl in the build, vulnscout beside it (2026-11-26)
 Two independent scanners write a report next to every image of the nightly and release builds. Neither fails a build: the reports
