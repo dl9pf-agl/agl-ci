@@ -9,7 +9,7 @@
 #                 is published on that address only; 0.0.0.0 and :: are refused.
 #   RSYNCD_ALLOW  REQUIRED. Address(es) or CIDR of the download server (rsyncd.conf "hosts allow"); everything else is refused.
 #   RSYNCD_PORT   default 873.
-#   CACHE_DIR     default /srv/agl-cache; its dl/, sstate/ and (if present) git/ and staging/ are mounted read-only.
+#   CACHE_DIR     default /srv/agl-cache; its dl/, sstate/ and (if present) git/, staging/ and nightly/ are mounted read-only.
 #   RSYNCD_IMAGE  default: the signed builder image of this checkout (ci/builder.digest); it has rsync and is on the host anyway.
 #   RSYNCD_NETWORK  optional docker network mode (e.g. host, for tests); then the daemon itself binds RSYNCD_BIND:RSYNCD_PORT.
 #   RSYNCD_NAME   container name, default agl-rsyncd.
@@ -33,6 +33,9 @@ mounts=(-v "$CACHE_DIR/dl:/srv/agl/dl:ro" -v "$CACHE_DIR/sstate:/srv/agl/sstate:
 [ ! -d "$CACHE_DIR/git" ] || mounts+=(-v "$CACHE_DIR/git:/srv/agl/git:ro")
 # release builds (release.yml) leave their files in staging/release/<branch>/<version>; the download server pulls them like dl and sstate
 [ ! -d "$CACHE_DIR/staging" ] || mounts+=(-v "$CACHE_DIR/staging:/srv/agl/staging:ro")
+# nightly builds (layer-ci.yml, nightly tier) are finalized into nightly/<date>; the download server pulls them with AREAS=nightly
+# (kit/release/run.sh nightly). Without this mount the daemon does not offer the area and the pull skips it without an error.
+[ ! -d "$CACHE_DIR/nightly" ] || mounts+=(-v "$CACHE_DIR/nightly:/srv/agl/nightly:ro")
 if [ -n "${RSYNCD_NETWORK:-}" ]; then net=(--network "$RSYNCD_NETWORK"); listen=(--address "$bind" --port "$PORT")
 else net=(-p "$bind:$PORT:873"); listen=(--port 873); fi
 "$E" rm -f "$NAME" >/dev/null 2>&1 || true
