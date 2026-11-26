@@ -1,0 +1,12 @@
+# Cron file for a BUILDER (the host that runs the builds; not for the download server, which has kit/release/agl-release.cron).
+# Install on the builder, as root:  cp kit/builder.cron /etc/cron.d/agl-builder   (the path below is the kit checkout, /root/agl-ci)
+# Log: /var/log/agl-prune-builder.log. Dry run first: sudo kit/prune-builder.sh   (it says what --apply would remove).
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# daily: abandoned partial directories (4 days quiet) and finished nightlies and staged releases (7 days quiet), see the script
+40 3 * * * root flock -n /run/agl-prune-builder.lock /root/agl-ci/kit/prune-builder.sh --apply >> /var/log/agl-prune-builder.log 2>&1
+
+# TODO (owner, 2026-11-26): sstate not used for 60 days (access time), twice a month. Turn this line on after checking that the cache
+# directory is not mounted noatime (findmnt -no OPTIONS -T /srv/agl-cache; prune-cache.sh refuses a noatime mount) and after a dry run:
+#17 4 1,15 * * root flock -n /run/agl-prune-builder.lock /root/agl-ci/kit/prune-cache.sh --apply >> /var/log/agl-prune-builder.log 2>&1

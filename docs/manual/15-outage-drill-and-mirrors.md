@@ -312,6 +312,16 @@ database: an old equivalence that points at a deleted object costs one rebuild. 
 retention is the artifact retention above. Tested on a fake tree (old, recent, read-only-recently, symlinked and protected
 files, `dl/` untouched, dry run, apply, `--mtime`); not run on a real cache, so start with the dry run and look at the numbers.
 
+`kit/prune-builder.sh` is the tool for the staging areas of a **builder** (decision 2026-11-26): a dry run by default, `--apply` deletes. It removes
+`.partial` directories (nightly and staged release) in which nothing changed for 4 days and that hold our `.run-id` marker, and finished
+`nightly/<date>` and `staging/release/<branch>/<version>` directories in which nothing changed for 7 days (`PARTIAL_DAYS`, `KEEP_DAYS`). It never
+touches `sstate/`, `dl/` or `git/`, never a name that does not fit, and follows no symlink. The download server has its own cleanups
+(`kit/release/cleanup-nightly.sh`, `cleanup-staging.sh`). **Risk:** until the server has pulled a directory, the copy on the builder is the only
+one (the first nightly, 2026-11-25, was not pulled for hours because the rsync daemon did not offer `nightly/`): check the download server
+before the 7 days end. `kit/builder.cron` runs it daily at 03:40 (install it as `/etc/cron.d/agl-builder`); the same file carries a commented
+line for `prune-cache.sh` (sstate by access time, 60 days, twice a month), a TODO until the cache mount is checked for `noatime`. Tested on a
+fake tree (`kit/prune-builder_test.sh`); not run on a real builder, so start with the dry run.
+
 ## Open items (keep current)
 | ID | Item | Status |
 |---|---|---|
