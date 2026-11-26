@@ -289,6 +289,12 @@ The same pull carries one more area: `AREAS=staging` copies `staging/` of every 
 download server's tree, where the images of one release built on different hosts are merged. A promoted release is copied to `release/` and its staging copy is removed
 after seven days; `release-done.txt` (rsync exclude file) keeps the pull from fetching it again. See chapter 19, section 5.
 
+`AREAS=nightly` (cron line `kit/release/run.sh nightly`, chapter 13) pulls the finalized nightly directories the same way. It only finds
+them if the daemon offers them: `rsyncd.sh` must mount `nightly/` too (it does since 2026-11-26). A daemon that was started before that
+change does not offer the area, and the pull then skips it with a note and **without an error**: the first nightly test (2026-11-25) was
+finalized on the build host and nothing arrived at the download server. Restart the daemon with the current `rsyncd.sh` after an update
+of the kit (same `RSYNCD_BIND` and `RSYNCD_ALLOW`); `docker exec <name> ls /srv/agl` lists what it offers.
+
 ## Folder growth
 `/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
