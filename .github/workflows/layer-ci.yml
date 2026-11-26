@@ -232,6 +232,7 @@ jobs:
       - name: collect
         if: needs.matrix.outputs.mode == 'build' && env.AGL_NIGHTLY == '1'
         env:
+          NIGHTLY_REPO: ${{ matrix.repo }}   # the repo that owns the image: its folder in the nightly
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}

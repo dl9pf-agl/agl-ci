@@ -119,7 +119,9 @@ new `AREAS=nightly` cron line) never sees a half-written run. No signing, no SHA
 Served at the download server's top level, `/nightly/<date>/...` (own nginx location, own mount in `kit/mirror/run.sh`, kept
 apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHTLY_KEEP_DAYS` (default 7) by
 `kit/release/cleanup-nightly.sh`, same cron chain; the builder's own copy is not pruned automatically (same as a staged, never
-promoted release - cleaned up there, by hand).
+promoted release - cleaned up there, by hand). The folder below the date is the repo that **owns the image** (the matrix entry's `repo`, passed as
+`NIGHTLY_REPO`), not the repo whose cron started the run: the nightly of meta-agl also builds the images of meta-agl-demo and meta-agl-devel, and two
+images of one machine in one folder would disagree about the shared kernel files (found by the first scheduled nightly, 2026-11-26).
 
 ## Scans: trowl in the build, vulnscout beside it (2026-11-26)
 Two independent scanners write a report next to every image of the nightly and release builds. Neither fails a build: the reports

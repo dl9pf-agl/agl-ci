@@ -40,4 +40,10 @@ missing=""
 for p in "${want_parts[@]}"; do case "$out" in *"$p"*) ;; *) missing="$missing [$p]" ;; esac; done
 if [ "$rc" -eq 0 ] && [ -z "$missing" ]; then ok "AGL_NIGHTLY=1 docker run has the mounts, environment and collect command"; else bad "docker call lacks:$missing -- got: $out"; fi
 
+# 3. NIGHTLY_REPO (the repo that owns the image) wins over AGL_SCOPE (the calling repo): the nightly of meta-agl builds the images of
+#    three repos, and each goes into its own folder.
+tree="$t/repo"; mkdir -p "$tree"
+out="$(run_nightly "$tree" AGL_NIGHTLY=1 NIGHTLY_REPO=meta-agl-demo NIGHTLY_DATE=2026-11-26-0300 AGL_SSTATE_DIR=/srv/agl-cache/sstate KAS_CONTAINER_IMAGE=b GITHUB_RUN_ID=77)"
+case "$out" in *"--repo meta-agl-demo") ok "NIGHTLY_REPO names the folder (not AGL_SCOPE)";; *) bad "NIGHTLY_REPO ignored: $out";; esac
+
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi
