@@ -50,7 +50,7 @@ fi
 if [ "${AGL_NIGHTLY:-}" = 1 ]; then
   # Same reason as the release collect step above: nightly-collect.sh must run as root, inside a container, on the sidecar's
   # Docker daemon, because this job cannot enter the cache directory itself.
-  # build.toml of the image records the commit that was built and the run. Both are read here, as the runner user who owns the
+  # build.toml of the image records the commit that was built, the run and the builder image. Both are read here, as the runner user who owns the
   # checkout, not in the root container. The nightly of meta-agl also builds images of other repos: IMAGE_REPO, not the caller.
   commit="$(git -C "$TREE/${IMAGE_REPO:?IMAGE_REPO is not set}" rev-parse HEAD)"
   run_url="${GITHUB_RUN_ID:+${GITHUB_SERVER_URL:-}/${GITHUB_REPOSITORY:-}/actions/runs/$GITHUB_RUN_ID}"
@@ -61,6 +61,7 @@ if [ "${AGL_NIGHTLY:-}" = 1 ]; then
     -v "$TREE:$TREE:ro" -v "$engine:$engine:ro" -v "$nightly:$nightly" \
     -e AGL_TREE="$TREE" -e NIGHTLY_STAGING="$nightly" -e NIGHTLY_DATE \
     -e NIGHTLY_COMMIT="$commit" -e NIGHTLY_RUN_URL="$run_url" -e NIGHTLY_RUN_ID="${GITHUB_RUN_ID:-local}" \
+    -e NIGHTLY_BUILDER="${KAS_CONTAINER_IMAGE:-}" \
     --entrypoint /bin/bash "${KAS_CONTAINER_IMAGE:?KAS_CONTAINER_IMAGE is not set}" \
     "$engine/nightly-collect.sh" --machine "$MACHINE" --target "$TARGET" --repo "$IMAGE_REPO"
 fi

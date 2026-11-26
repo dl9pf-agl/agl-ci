@@ -71,4 +71,33 @@ if [ "$rc" -ne 0 ] && grep -q 'KAS_CONTAINER_IMAGE is not set' <<<"$out"; then o
 out="$(run_blocks "$tree" AGL_RELEASE=1 RELEASE_BRANCH=vimba RELEASE_VERSION=22.0.2 AGL_SSTATE_DIR=/c/sstate KAS_CONTAINER_IMAGE=b)"; rc=$?
 if [ "$rc" -ne 0 ] && grep -q 'IMAGE_REPO is not set' <<<"$out"; then ok "a release without IMAGE_REPO is refused"; else bad "missing IMAGE_REPO accepted: $out"; fi
 
+# Case 5: the flattened kas file. Release and nightly builds dump it next to the image: without the host fragments and the
+# provenance fragment, with the target, never with --resolve-env. A normal build writes none.
+flat_step="$(sed -n '/^# --- begin flattened kas file step/,/^# --- end flattened kas file step/p' "$f")"
+[ -n "$flat_step" ] || { echo "FAIL: the marker comments of the flattened kas file step are missing in $f" >&2; exit 1; }
+files="kas/base.yml:kas/machine/qemux86-64.yml:kas/pins.yml:kas/local/sstate-shared.yml:kas/local/dl-shared.yml:kas/local/mirrors.yml"
+files="$files:kas/local/hashserv-rw.yml:kas/local/hashserv-upstream.yml:kas/local/vulnscout-sbom.yml:kas/feature/trowl.yml:build/ci-kas/ci-only.yml:build/ci-kas/provenance.yml"
+# shellcheck disable=SC2016  # the single-quoted stub is meant to expand inside the inner bash
+run_flat() {
+  local tree="$1"; shift
+  env -i PATH="$PATH" "$@" bash -c '
+    set -euo pipefail
+    kas_run() { printf "%s\n" "$*" >> "'"$tree"'/kas.args"; echo "flattened: yes"; return "${KAS_RC:-0}"; }
+    TARGET=agl-image-minimal; MACHINE=qemux86-64; KASFILES="'"$files"'"; TREE="'"$tree"'"
+    '"$flat_step"'
+  ' 2>&1
+}
+want="dump --resolve-refs --resolve-local kas/base.yml:kas/machine/qemux86-64.yml:kas/pins.yml:kas/local/vulnscout-sbom.yml:kas/feature/trowl.yml:build/ci-kas/ci-only.yml:build/ci-kas/target.yml"
+for mode in AGL_RELEASE AGL_NIGHTLY; do
+  tree="$t/flat-$mode"; d="$tree/build/tmp/deploy/images/qemux86-64"; mkdir -p "$d"
+  out="$(run_flat "$tree" "$mode=1")"; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(cat "$tree/kas.args")" = "$want" ]; then ok "$mode: kas dumps the public fragments plus the target"; else bad "$mode: rc=$rc out=$out args=$(cat "$tree/kas.args")"; fi
+  if grep -qx 'flattened: yes' "$d/agl-image-minimal-qemux86-64.kas.yml" && grep -qx '  - agl-image-minimal' "$tree/build/ci-kas/target.yml"; then ok "$mode: the file is next to the image, the target fragment names the image"; else bad "$mode: file or target fragment wrong"; fi
+done
+tree="$t/flat-normal"; mkdir -p "$tree/build/tmp/deploy/images/qemux86-64"
+run_flat "$tree" > /dev/null; if [ ! -e "$tree/kas.args" ]; then ok "a normal build writes no flattened file"; else bad "a normal build dumped"; fi
+tree="$t/flat-fail"; mkdir -p "$tree/build/tmp/deploy/images/qemux86-64"
+out="$(run_flat "$tree" AGL_NIGHTLY=1 KAS_RC=1)"; rc=$?
+if [ "$rc" -ne 0 ] && [ ! -e "$tree/build/tmp/deploy/images/qemux86-64/agl-image-minimal-qemux86-64.kas.yml" ]; then ok "a failed dump fails the step and leaves no file"; else bad "failed dump accepted: $out"; fi
+
 if [ "$fails" -eq 0 ]; then echo "all tests passed"; else echo "$fails test(s) failed"; exit 1; fi

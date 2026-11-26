@@ -42,7 +42,7 @@ out="$(run_nightly "$tree" AGL_NIGHTLY=1 IMAGE_REPO=meta-agl NIGHTLY_DATE=2026-1
   GITHUB_RUN_ID=77 GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=org/meta-agl)"; rc=$?
 want_parts=("run --rm --user 0" "-v $tree:$tree:ro" "-v /ci/scripts:/ci/scripts:ro" "-v /srv/agl-cache/nightly:/srv/agl-cache/nightly"
   "-e AGL_TREE=$tree" "-e NIGHTLY_STAGING=/srv/agl-cache/nightly" "-e NIGHTLY_DATE" "-e NIGHTLY_COMMIT=$commit"
-  "-e NIGHTLY_RUN_URL=https://github.com/org/meta-agl/actions/runs/77" "-e NIGHTLY_RUN_ID=77"
+  "-e NIGHTLY_RUN_URL=https://github.com/org/meta-agl/actions/runs/77" "-e NIGHTLY_RUN_ID=77" "-e NIGHTLY_BUILDER=builder@sha256:abc"
   "--entrypoint /bin/bash builder@sha256:abc /ci/scripts/nightly-collect.sh --machine qemux86-64 --target agl-image-minimal --repo meta-agl")
 missing=""
 for p in "${want_parts[@]}"; do case "$out" in *"$p"*) ;; *) missing="$missing [$p]" ;; esac; done

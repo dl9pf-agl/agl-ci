@@ -14,10 +14,11 @@
 #                     passed to every matrix job, so all images of one run land in the same folder)
 #   NIGHTLY_COMMIT    the commit of the repository that owns the image (goes into build.toml)
 #   NIGHTLY_RUN_URL   the web address of this run, for build.toml (default: empty)
+#   NIGHTLY_BUILDER   the builder container image (name@digest), for build.toml (default: empty)
 #   NIGHTLY_RUN_ID    id of this nightly run (default: GITHUB_RUN_ID, else "local"); all images of one run must carry it
 #
 # The layout (public): <date>/<repo>/<machine>/<target>/ holds everything of one image: its files, the kernel and boot files,
-# the scanner reports, build.toml (repo, commit, run) and <target>.SHA256SUMS. The folder appears in one step, complete. A consumer
+# the scanner reports, build.toml (repo, commit, run, builder) and <target>.SHA256SUMS. The folder appears in one step, complete. A consumer
 # that reads it through the download server (a LAVA job) waits until the sums file is there AND verifies, and retries otherwise.
 # The run as a whole is complete when <date>/COMPLETE exists (nightly-finalize.sh, after every build job of the run).
 #
@@ -47,6 +48,7 @@ staging="${NIGHTLY_STAGING:?NIGHTLY_STAGING is not set}"
 date="${NIGHTLY_DATE:?NIGHTLY_DATE is not set}"
 commit="${NIGHTLY_COMMIT:?NIGHTLY_COMMIT is not set}"
 run_url="${NIGHTLY_RUN_URL:-}"
+builder="${NIGHTLY_BUILDER:-}"
 run_id="${NIGHTLY_RUN_ID:-${GITHUB_RUN_ID:-local}}"
 # Names go into paths and glob patterns below: only plain names are accepted.
 [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad or missing --machine: '$machine'"
@@ -55,6 +57,7 @@ run_id="${NIGHTLY_RUN_ID:-${GITHUB_RUN_ID:-local}}"
 [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}$ ]] || die "bad NIGHTLY_DATE (want YYYY-MM-DD-HHMM): '$date'"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "bad NIGHTLY_COMMIT (want 40 hex characters): '$commit'"
 [[ "$run_url" =~ ^[A-Za-z0-9:/._-]*$ ]] || die "bad NIGHTLY_RUN_URL: '$run_url'"
+[[ "$builder" =~ ^[A-Za-z0-9:@/._-]*$ ]] || die "bad NIGHTLY_BUILDER: '$builder'"
 
 deploy="$tree/build/tmp/deploy/images/$machine"   # what bitbake deployed for this machine in this job
 part="$staging/.$date.partial"                    # the hidden work directory; the rsync pull never offers dotfiles
@@ -113,7 +116,7 @@ for report in report-trowl report-vulnscout; do
 done
 
 # What was built, for whoever tests the image later; then the sums of every file in the folder (the sums file not itself).
-printf 'repo = "%s"\ncommit = "%s"\nrun = "%s"\n' "$repo" "$commit" "$run_url" > "$work/build.toml"
+printf 'repo = "%s"\ncommit = "%s"\nrun = "%s"\nbuilder = "%s"\n' "$repo" "$commit" "$run_url" "$builder" > "$work/build.toml"
 ( cd "$work" && find . -type f ! -name "$target.SHA256SUMS" -printf '%P\0' | LC_ALL=C sort -z | xargs -0 sha256sum -- ) > "$part/sums.tmp"
 mv "$part/sums.tmp" "$work/$target.SHA256SUMS"
 total="$(du -sh "$work" | cut -f1)"

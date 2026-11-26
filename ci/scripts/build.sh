@@ -47,6 +47,25 @@ else
 fi
 # --- end release kas step
 
+# --- begin flattened kas file step (release-build_test.sh runs this block with a stub for kas_run)
+if [ "${AGL_RELEASE:-}" = 1 ] || [ "${AGL_NIGHTLY:-}" = 1 ]; then
+  # One kas file that sets up exactly this build again, also outside of CI: all fragments merged, a commit for every repository,
+  # the target named. It lands next to the image under the image's own name, so the collect step publishes (and in a release
+  # signs) it with the other files. It is public, so the fragments of this host stay out (shared caches, mirror, hash server:
+  # private addresses and paths; they change where files come from, not what is built), as does the release-only artifacts list.
+  # Never --resolve-env: it would write environment values into the file. Run in the tree that was just built, without an update,
+  # so that floating branches resolve to the commits that were built.
+  mkdir -p "$TREE/build/ci-kas"
+  printf 'header:\n  version: 22\ntarget:\n  - %s\n' "$TARGET" > "$TREE/build/ci-kas/target.yml"
+  public="$(tr ':' '\n' <<<"$KASFILES" \
+    | grep -vxE 'kas/local/(sstate-shared|dl-shared|mirrors|hashserv-rw|hashserv-upstream)\.yml|build/ci-kas/provenance\.yml' | paste -sd: -)"
+  flat="$TREE/build/tmp/deploy/images/$MACHINE/$TARGET-$MACHINE.kas.yml"
+  kas_run dump --resolve-refs --resolve-local "$public:build/ci-kas/target.yml" > "$flat.tmp"
+  mv "$flat.tmp" "$flat"
+  echo "build.sh: wrote $flat"
+fi
+# --- end flattened kas file step
+
 if [ "$ENTRY_SDK" = "True" ] && [ "$SDK_ALLOWED" = "true" ]; then
   echo "build.sh: populating SDK for $TARGET"
   # shellcheck disable=SC2046
