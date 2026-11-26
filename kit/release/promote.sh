@@ -3,12 +3,12 @@
 # Promote verified releases on the DOWNLOAD SERVER: staging/release/<branch>/<version>/ -> release/<branch>/<version>/.
 # Run from cron after the pull (kit/mirror/pull-sync.sh with AREAS="dl sstate git staging"), idempotent, one run at a time.
 #
-#   RELEASE_ROOT=/srv/mirror RELEASE_UCB_DIR=/srv/agl-ucb kit/release/promote.sh [<branch> <version>]
+#   RELEASE_ROOT=/srv/agl-permanent RELEASE_UCB_DIR=/srv/agl-ucb kit/release/promote.sh [<branch> <version>]
 #
 # With a branch and version only that release is looked at (manual mode: an engineer promotes by hand). Without: every staged one.
 #
 # Environment:
-#   RELEASE_ROOT            the mirror tree holding staging/release and release (default /srv/mirror); both must be on ONE file system (the last step is a rename)
+#   RELEASE_ROOT            the mirror tree holding staging/release and release (default /srv/agl-permanent); both must be on ONE file system (the last step is a rename)
 #   RELEASE_UCB_DIR         a read-only checkout of agl-ucb (the cron pulls it): the engineers' signatures are files there,
 #                           kas/releases/<branch>_<version>.SHA256SUMS.<id>.sig, one commit each
 #   RELEASE_KEYS_DIR        the engineers' public keys <id>.pub (default: keys/release of this checkout); REVOKED.txt next to it
@@ -45,7 +45,7 @@ set -euo pipefail
 set -f   # the verify argument strings are split into words unquoted and contain [0-9a-f] (a glob)
 
 here="$(cd "$(dirname "$0")" && pwd)"
-root="${RELEASE_ROOT:-/srv/mirror}"
+root="${RELEASE_ROOT:-/srv/agl-permanent}"
 ucb="${RELEASE_UCB_DIR:-}"
 keys="${RELEASE_KEYS_DIR:-$here/../../keys/release}"
 revoked="${RELEASE_REVOKED:-$keys/../REVOKED.txt}"

@@ -1,4 +1,4 @@
-# Cron file for a BUILDER (the host that runs the builds; not for the download server, which has kit/release/agl-release.cron).
+# Cron file for a BUILDER (the host that runs the builds; not for the download server, which has kit/server.cron).
 # Install on the builder, as root:  cp kit/builder.cron /etc/cron.d/agl-builder   (the path below is the kit checkout, /root/agl-ci)
 # Log: /var/log/agl-prune-builder.log. Dry run first: sudo kit/prune-builder.sh   (it says what --apply would remove).
 SHELL=/bin/sh

@@ -248,7 +248,7 @@ download server pulls with `kit/mirror/pull-sync.sh`.
   read-only mounts of `dl/`, `sstate/` and `git/`. The module is `read only`, refuses `--delete`, and offers neither
   `*.lock`, `*.tmp`, `*.done`, `hashserv.db*`, dotfiles nor `dl/git2/`. Access control is the network plus `hosts allow`; the
   transfer is not encrypted, which is why the network must be private. Stop it with `docker rm -f agl-rsyncd`.
-- Download server: `SOURCES="rsync://10.0.0.5/agl/ rsync://10.0.0.6/agl/" MIRROR_ROOT=/srv/mirror kit/mirror/pull-sync.sh [-n]`,
+- Download server: `SOURCES="rsync://10.0.0.5/agl/ rsync://10.0.0.6/agl/" MIRROR_ROOT=/srv/agl-permanent kit/mirror/pull-sync.sh [-n]`,
   from cron, as any user that may write `MIRROR_ROOT`. Per source and per area (`dl`, `sstate`, `git`; `git` only if offered) it
   runs rsync with `--ignore-existing --delay-updates`, so an existing file is never replaced (the objects are content-addressed,
   and a damaged copy on a build host cannot overwrite a good one), and writes `MIRROR_ROOT/LAST_SYNC` after a successful run
@@ -296,7 +296,7 @@ finalized on the build host and nothing arrived at the download server. Restart 
 of the kit (same `RSYNCD_BIND` and `RSYNCD_ALLOW`); `docker exec <name> ls /srv/agl` lists what it offers.
 
 ## Folder growth
-`/srv/mirror/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
+`/srv/agl-permanent/{sstate,dl}`, `/srv/artifacts` and `CACHE_DIR` each get their own filesystem or volume, so a full mirror
 cannot stop Docker. One writer per area. sstate: prune with `sstate-cache-management` or by age (check whether the
 filesystem keeps access times first). dl: never pruned (decision 2026-10-28): the downloads are the premirror for rebuilding old
 builds during an outage, and they grow slowly; what grows is sstate and the binary releases. Artifacts follow the retention of the artifact chapter
@@ -321,6 +321,16 @@ one (the first nightly, 2026-11-25, was not pulled for hours because the rsync d
 before the 7 days end. `kit/builder.cron` runs it daily at 03:40 (install it as `/etc/cron.d/agl-builder`); the same file carries a commented
 line for `prune-cache.sh` (sstate by access time, 60 days, twice a month), a TODO until the cache mount is checked for `noatime`. Tested on a
 fake tree (`kit/prune-builder_test.sh`); not run on a real builder, so start with the dry run.
+
+**Two trees, two names (decision 2026-11-26).** A builder's `CACHE_DIR` (default `/srv/agl-cache`) is working storage: sstate and downloads that can be
+rebuilt, plus the staging areas that `kit/prune-builder.sh` empties. The tree of a **download server** is permanent, published data: `dl`, `sstate`, `git`,
+`release`, `staging` (releases that wait for the engineer signature) and `nightly`. Its default name is `/srv/agl-permanent` (`RELEASE_ROOT` in
+`promote.env`, `MIRROR_ROOT` for `pull-sync.sh`, `git-refresh.sh` and `kit/mirror/run.sh`). The old host had both roles in `/srv/agl-cache` until the
+move (`CACHE_DIR` there was the server tree). Never put `kit/builder.cron` on a server: its prune would take a staged release that is 7 days old. The
+server's jobs are one file, `kit/server.cron` (installed as `/etc/cron.d/agl-server`): release, nightly, the pull of `dl`/`sstate`/`git`
+(`kit/release/run.sh mirror`) and the refresh of the bare git mirrors every 30 minutes (`run.sh git`, `kit/mirror/git-refresh.sh`: it updates its
+clones of agl-ucb and the layers first; one clone that cannot be fast-forwarded is reported and the run goes on). The hash equivalence server of the old
+host keeps its database in a docker volume, outside both trees.
 
 ## Open items (keep current)
 | ID | Item | Status |

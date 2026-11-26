@@ -167,11 +167,14 @@ one VM per release build, and a read-only verified cache with a reproducible-bui
 
 ## 10 Setting up a download server (checklist)
 
-1. `kit/mirror/run.sh` (nginx, mounts `dl`, `sstate`, `git`, `staging`, `release`, the start page); `kit/mirror/rsyncd.sh` on every build host (bind to the private address,
-   allow the server only; it mounts `staging` when the directory exists: create it before starting).
+0. The tree of the server is `/srv/agl-permanent` (`RELEASE_ROOT` and `MIRROR_ROOT`): published, permanent data (`dl`, `sstate`, `git`, `release`, `staging`,
+   `nightly`). It is not the cache of a builder (`/srv/agl-cache`, `CACHE_DIR`), which is working storage that can be rebuilt; the two are different directories, and
+   the prune cron of a builder (`kit/builder.cron`) must never run on the server.
+1. `MIRROR_ROOT=/srv/agl-permanent kit/mirror/run.sh` (nginx, mounts `dl`, `sstate`, `git`, `staging`, `release`, `nightly`, the start page); `kit/mirror/rsyncd.sh` on every build host (bind to the private address,
+   allow the server only; it mounts `staging` and `nightly` when the directories exist: create them before starting).
 2. `cosign` (checksum-verified, version of `docker/pins.env`), `jq`, `curl`, `tar`, `rsync`, `flock`, `git`; a read-only clone of agl-ucb (`RELEASE_UCB_DIR`).
 3. `/etc/agl-release/promote.env` (from `kit/release/promote.env.example`) and the engineers' public keys (`RELEASE_KEYS_DIR`, `REVOKED.txt` next to it).
-4. `/etc/cron.d/agl-release` from `kit/release/agl-release.cron`.
+4. `/etc/cron.d/agl-server` from `kit/server.cron` (release, nightly, the pull of `dl`/`sstate`/`git`, the refresh of the git mirrors; `kit/release/run.sh` reads the settings from `promote.env`, so no address is in the cron file).
 5. Check: `kit/release/run.sh` once by hand, `/var/log/agl-release.log`, `curl -I http://localhost:8080/release/`.
 
 The tag ruleset in agl-ucb (only admins create `*_*.*.*` tags) and the permission ceiling of the caller (`contents: write, id-token: write`) are repository settings

@@ -16,6 +16,8 @@ run kit/release/promote_test.sh   # the download server verifies and promotes a 
 run ci/scripts/premirror_test.sh   # the git mirror rewrite of kas: no backslash, survives kas-container's forwarding (needs python3)
 run ci/scripts/kas-checkout_test.sh   # kas_checkout: from the original URLs when the git mirror cannot serve a repository (stubs, no kas)
 run kit/prune-builder_test.sh   # the builder prune: old partials and finished nightlies/releases go, young, foreign and symlinked ones stay (fake tree)
+run kit/mirror/git-refresh_test.sh   # the git mirror refresh of the download server: clones updated first, one failure does not stop the others (local repos, stubs)
+run kit/release/run_test.sh   # the cron entry of the download server: which script each word calls and where it logs (stubs)
 run docker/runner/job-started_test.sh   # the job-started hook that keeps fork pull requests off the trusted hosts (needs python3)
 run python3 ci/scripts/_matrix_test.py   # the matrix of a pull request is untrusted input: the validation must hold (needs PyYAML)
 run ci/scripts/release-collect_test.sh   # which files of an image go into a release, the sums file, and what is refused (release process)

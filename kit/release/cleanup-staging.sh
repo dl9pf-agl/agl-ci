@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: MIT
 # Remove the staging copy of releases that were promoted long enough ago. Run daily from cron on the DOWNLOAD SERVER.
 #
-#   RELEASE_ROOT=/srv/mirror kit/release/cleanup-staging.sh [-n]      -n: only say what would be removed
+#   RELEASE_ROOT=/srv/agl-permanent kit/release/cleanup-staging.sh [-n]      -n: only say what would be removed
 #
-#   RELEASE_ROOT              the mirror tree (default /srv/mirror)
+#   RELEASE_ROOT              the mirror tree (default /srv/agl-permanent)
 #   RELEASE_STAGING_KEEP_DAYS days to keep the staging copy after promotion (default 7); 0 = remove at once
 #
 # Flow: for each staging/release/<branch>/<version> whose release/<branch>/<version>/PROMOTED exists and is older than the limit:
 #   1. remove the staging directory
-#   2. add "/release/<branch>/<version>/" to $RELEASE_ROOT/release-done.txt, the exclude file of the pull (agl-release.cron):
+#   2. add "/release/<branch>/<version>/" to $RELEASE_ROOT/release-done.txt, the exclude file of the pull (kit/server.cron):
 #      the build host still offers the release, and without that line the next pull would copy it into staging again.
 # A staged release that is NOT promoted is never touched. The build host's own copy is cleaned up there, by hand.
 set -euo pipefail
-root="${RELEASE_ROOT:-/srv/mirror}"; days="${RELEASE_STAGING_KEEP_DAYS:-7}"
+root="${RELEASE_ROOT:-/srv/agl-permanent}"; days="${RELEASE_STAGING_KEEP_DAYS:-7}"
 [[ "$days" =~ ^[0-9]+$ ]] || { echo "cleanup-staging: RELEASE_STAGING_KEEP_DAYS must be a number" >&2; exit 1; }
 dry=0; [ "${1:-}" != -n ] || dry=1
 [ -d "$root/staging/release" ] || { echo "cleanup-staging: no staging/release yet, nothing to do"; exit 0; }   # before the first release

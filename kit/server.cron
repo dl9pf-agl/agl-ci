@@ -1,0 +1,23 @@
+# Cron file for the DOWNLOAD SERVER (the host that serves the mirror and publishes releases and nightlies; never for a builder, which has
+# kit/builder.cron). Install as /etc/cron.d/agl-server (it replaces the three files agl-release, agl-pull-sync and agl-git-mirrors of an
+# older install). Adjust the path of the agl-ci checkout and the user. The settings (the build hosts, the tree, the keys) are in
+# /etc/agl-release/promote.env (kit/release/promote.env.example); no address is written here. Logs: /var/log/agl-release.log and
+# /var/log/agl-mirror.log. Every job takes its own lock, so none blocks another.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Releases, every 5 minutes: pull the staging area of the build hosts (BUILD_RSYNC lists their rsync URLs), update the agl-ucb checkout
+# (the engineers' signatures are commits there), verify and promote. promote.sh fetches the signed files of the release from GitHub and
+# waits until every listed file has arrived. Daily: remove promoted staging copies. To switch promotion to manual, put
+# RELEASE_PROMOTE=manual in promote.env; then run kit/release/promote.sh <branch> <version> by hand.
+*/5 * * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh
+17 3 * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh cleanup
+
+# Nightly builds: never signed, never promoted - the pull IS the publish. Daily: remove nightly directories older than NIGHTLY_KEEP_DAYS (7).
+*/5 * * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly
+22 3 * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly cleanup
+
+# The mirror: pull dl, sstate and git of the build hosts every 5 minutes; refresh the bare git mirrors of the layer repositories every 30
+# minutes (a floating layer is never taken from them in CI, see chapter 15; the mirrors are the fallback for an outage of GitHub).
+*/5 * * * * root flock -n /run/agl-pull-sync.lock /root/agl-ci/kit/release/run.sh mirror
+*/30 * * * * root flock -n /run/agl-git-mirrors.lock /root/agl-ci/kit/release/run.sh git
