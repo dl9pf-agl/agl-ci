@@ -5,10 +5,10 @@
 # transfer; the build hosts offer their cache read-only through kit/mirror/rsyncd.sh on a private network, so there is no
 # account, key or password on either side.
 #
-#   SOURCES="rsync://10.0.0.5/agl/ rsync://10.0.0.6/agl/" MIRROR_ROOT=/srv/mirror kit/mirror/pull-sync.sh [-n]
+#   SOURCES="rsync://10.0.0.5/agl/ rsync://10.0.0.6/agl/" MIRROR_ROOT=/srv/agl-permanent kit/mirror/pull-sync.sh [-n]
 #
 #   SOURCES      rsync daemon URLs of the build hosts (module "agl", ending in "/"); the script appends dl/, sstate/ and git/.
-#   MIRROR_ROOT  where the mirror tree lives (default /srv/mirror); the web server serves MIRROR_ROOT/dl, sstate and git.
+#   MIRROR_ROOT  where the mirror tree lives (default /srv/agl-permanent); the web server serves MIRROR_ROOT/dl, sstate and git.
 #   AREAS        default "dl sstate git". A missing area on a source is skipped with a note (git/ exists only after
 #                git-mirrors.sh ran); dl and sstate missing is an error.
 #   RSYNC_EXTRA  extra rsync options, e.g. "--max-size=200K" to pull only small files for a test (kit/mirror/sync-selftest.sh).
@@ -20,7 +20,7 @@
 # After a successful run MIRROR_ROOT/LAST_SYNC holds the time; a monitor should alert when it gets old. Runs as any user that
 # may write MIRROR_ROOT; it needs no privilege.
 set -euo pipefail
-mirror="${MIRROR_ROOT:-/srv/mirror}"
+mirror="${MIRROR_ROOT:-/srv/agl-permanent}"
 sources="${SOURCES:?set SOURCES to the rsync URLs of the trusted build hosts, e.g. \"rsync://10.0.0.5/agl/\"}"
 areas="${AREAS:-dl sstate git}"
 dry=(); [ "${1:-}" != -n ] || dry=(--dry-run)

@@ -5,17 +5,17 @@
 # set when the pull finished writing it - the builder's own copy of a nightly is cleaned up there, by hand, same as a staged
 # release that was never promoted).
 #
-#   RELEASE_ROOT=/srv/mirror kit/release/cleanup-nightly.sh [-n]      -n: only say what would be removed
+#   RELEASE_ROOT=/srv/agl-permanent kit/release/cleanup-nightly.sh [-n]      -n: only say what would be removed
 #
-#   RELEASE_ROOT         the mirror tree (default /srv/mirror)
+#   RELEASE_ROOT         the mirror tree (default /srv/agl-permanent)
 #   NIGHTLY_KEEP_DAYS     days to keep a nightly directory (default 7); 0 = remove at once
 #
 # Flow: for each nightly/<date> older than the limit:
-#   1. add "/nightly/<date>/" to $RELEASE_ROOT/nightly-done.txt, the exclude file of the pull (agl-release.cron): without
+#   1. add "/nightly/<date>/" to $RELEASE_ROOT/nightly-done.txt, the exclude file of the pull (server.cron): without
 #      that line the next pull would copy it back from the builder (its own copy is not cleaned up by this script)
 #   2. remove the directory
 set -euo pipefail
-root="${RELEASE_ROOT:-/srv/mirror}"; days="${NIGHTLY_KEEP_DAYS:-7}"
+root="${RELEASE_ROOT:-/srv/agl-permanent}"; days="${NIGHTLY_KEEP_DAYS:-7}"
 [[ "$days" =~ ^[0-9]+$ ]] || { echo "cleanup-nightly: NIGHTLY_KEEP_DAYS must be a number" >&2; exit 1; }
 dry=0; [ "${1:-}" != -n ] || dry=1
 [ -d "$root/nightly" ] || { echo "cleanup-nightly: no nightly yet, nothing to do"; exit 0; }   # before the first nightly pull
