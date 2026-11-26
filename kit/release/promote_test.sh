@@ -25,7 +25,7 @@ sig_args="--tlog-upload=false"
 # mk NAME: a fixture in $t/NAME: root/staging/release/testrel/0.0.1, keys (alice, bob), ucb with signatures of alice only.
 mk() {
   local d="$t/$1" s img
-  s="$d/root/staging/release/testrel/0.0.1"; img="$s/$M/deploy/images/$M"
+  s="$d/root/staging/release/testrel/0.0.1"; img="$s/meta-agl/$M/img"
   mkdir -p "$img" "$d/keys/release" "$d/ucb/kas/releases"
   cp "$t/keys-alice/cosign.pub" "$d/keys/release/alice.pub"; cp "$t/keys-bob/cosign.pub" "$d/keys/release/bob.pub"; : > "$d/keys/REVOKED.txt"
   echo "image" > "$img/img-$M.ext4.xz"; echo "kernel" > "$img/bzImage-$M.bin"; echo '{"statement":1}' > "$img/img.provenance.json"
@@ -34,7 +34,7 @@ mk() {
     "$cosign" attest-blob --yes --key "$t/keys-ci/cosign.key" $sig_args --type https://slsa.dev/provenance/v1 --predicate "$d/predicate.json" \
       --bundle img.slsa.intoto.bundle img.SHA256SUMS > /dev/null 2>&1 )
   echo "pins" > "$s/pins_testrel_0.0.1.yml"
-  ( cd "$s" && sha256sum -- "$M/deploy/images/$M/img.SHA256SUMS" "$M/deploy/images/$M/img.provenance.json" "$M/deploy/images/$M/img.slsa.intoto.bundle" pins_testrel_0.0.1.yml > SHA256SUMS
+  ( cd "$s" && sha256sum -- "meta-agl/$M/img/img.SHA256SUMS" "meta-agl/$M/img/img.provenance.json" "meta-agl/$M/img/img.slsa.intoto.bundle" pins_testrel_0.0.1.yml > SHA256SUMS
     "$cosign" sign-blob --yes --key "$t/keys-ci/cosign.key" $sig_args --bundle SHA256SUMS.bundle SHA256SUMS > /dev/null 2>&1 )
   esign "$d" alice
 }
@@ -79,15 +79,15 @@ if [ "$rc" -eq 0 ] && ! promoted manual && echo "$out" | grep -q 'manual mode, N
 out="$(runh manual)"; promoted manual && ok "promote.sh <branch> <version> promotes by hand" || bad "hand promotion failed (manual env was off): $out"
 
 # 3. Each fault is refused and nothing is promoted.
-mk changed; echo "x" >> "$t/changed/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img-$M.ext4.xz"
+mk changed; echo "x" >> "$t/changed/root/staging/release/testrel/0.0.1/meta-agl/$M/img/img-$M.ext4.xz"
 out="$(run changed)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted changed && echo "$out" | grep -q 'does not verify' && ok "a changed file is refused" || bad "changed file: $out"
 mk extra; echo "stray" > "$t/extra/root/staging/release/testrel/0.0.1/stray.txt"
 out="$(run extra)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted extra && echo "$out" | grep -q 'nobody lists: stray.txt' && ok "an extra file is refused" || bad "extra file: $out"
 mk link; ln -s /etc/passwd "$t/link/root/staging/release/testrel/0.0.1/link"
 out="$(run link)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted link && echo "$out" | grep -q 'symlink' && ok "a symlink is refused" || bad "symlink: $out"
-mk nobundle; rm "$t/nobundle/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img.slsa.intoto.bundle"
+mk nobundle; rm "$t/nobundle/root/staging/release/testrel/0.0.1/meta-agl/$M/img/img.slsa.intoto.bundle"
 out="$(run nobundle)"; rc=$?; [ "$rc" -eq 0 ] && ! promoted nobundle && echo "$out" | grep -q 'not here yet: .*img.slsa.intoto.bundle' && ok "a listed attestation bundle that is not here: waits" || bad "missing bundle: $out"
-mk badbundle; echo "not a bundle" > "$t/badbundle/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img.slsa.intoto.bundle"
+mk badbundle; echo "not a bundle" > "$t/badbundle/root/staging/release/testrel/0.0.1/meta-agl/$M/img/img.slsa.intoto.bundle"
 out="$(run badbundle)"; rc=$?; [ "$rc" -ne 0 ] && ! promoted badbundle && echo "$out" | grep -q 'SHA256SUMS does not verify' && ok "a wrong attestation bundle is refused" || bad "bad bundle: $out"
 mk wrongci
 out="$(run wrongci RELEASE_CI_VERIFY_ARGS="--key $t/keys-ci2/cosign.pub --insecure-ignore-tlog=true")"; rc=$?
@@ -138,10 +138,10 @@ mksplit noasset
 out="$(run noasset RELEASE_ASSET_URL="file://$t/noasset/does-not-exist.tgz")"; rc=$?
 if [ "$rc" -eq 0 ] && ! promoted noasset && echo "$out" | grep -q 'no signed files yet'; then ok "an asset that is not published yet: waits"; else bad "no asset: $out"; fi
 
-mksplit hostmissing; rm "$t/hostmissing/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/img-$M.ext4.xz"
+mksplit hostmissing; rm "$t/hostmissing/root/staging/release/testrel/0.0.1/meta-agl/$M/img/img-$M.ext4.xz"
 out="$(run hostmissing RELEASE_ASSET_URL="file://$t/hostmissing/asset.tgz")"; rc=$?
 if [ "$rc" -eq 0 ] && ! promoted hostmissing && echo "$out" | grep -q 'waiting for 1 listed files'; then ok "an image that its build host has not delivered yet: waits"; else bad "missing host: $out"; fi
-cp "$t/asset/root/release/testrel/0.0.1/$M/deploy/images/$M/img-$M.ext4.xz" "$t/hostmissing/root/staging/release/testrel/0.0.1/$M/deploy/images/$M/"
+cp "$t/asset/root/release/testrel/0.0.1/meta-agl/$M/img/img-$M.ext4.xz" "$t/hostmissing/root/staging/release/testrel/0.0.1/meta-agl/$M/img/"
 out="$(run hostmissing RELEASE_ASSET_URL="file://$t/hostmissing/asset.tgz")"; promoted hostmissing && ok "once the file has arrived the release is promoted" || bad "after arrival: $out"
 
 # an unsafe tar (a path outside the tree, a link) is refused before anything is unpacked

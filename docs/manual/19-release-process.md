@@ -30,8 +30,9 @@ engineer:  signs SHA256SUMS (YubiKey), commits kas/releases/<tag>.SHA256SUMS.<id
 ```
 **Design rules** (decided by the owner): one combined release per tag; the pins file lists *all* known repos (23 today), so a release is
 reproducible from the tag alone; images are built **in parallel on different hosts and combined on the download server**; the job that
-signs cannot write to the repository and the job that writes cannot sign; releases are immutable; AGL/Yocto's own layout
-`<machine>/deploy/images/<machine>/` is kept as it is.
+signs cannot write to the repository and the job that writes cannot sign; releases are immutable; every image has its own
+folder `<repo>/<machine>/<target>/` (decision 2026-11-26; it replaces the AGL/Yocto layout `<machine>/deploy/images/<machine>/`, in
+which images of one machine shared the kernel files and the vulnscout report).
 
 ## 2 Names and files
 
@@ -40,14 +41,14 @@ signs cannot write to the repository and the job that writes cannot sign; releas
 | tag | agl-ucb `<branch>_<version>`, e.g. `vimba_22.0.2`; regex `^[a-z]+_[0-9]+\.[0-9]+\.[0-9]+$`; rehearsal `releasetest_0.0.3` |
 | pins file | agl-ucb `kas/releases/pins_<branch>_<version>.yml`: every repo of every fragment, one commit each; the release job copies it over `kas/pins.yml` in its throw-away tree |
 | engineer signature | agl-ucb `kas/releases/<branch>_<version>.SHA256SUMS.<id>.sig` (one file per engineer, added after the tag) |
-| image files | `<machine>/deploy/images/<machine>/<target>-<machine>.*` (own files) plus the kernel and boot files of the machine (`*Image-<machine>.bin`, `*Image`, `*.efi`, `*.efi.stub`, `*.dtb`) |
+| image files | `<repo>/<machine>/<target>/`: `<target>-<machine>.*` (own files) plus the kernel and boot files of the machine (`*Image-<machine>.bin`, `*Image`, `*.efi`, `*.efi.stub`, `*.dtb`) |
 | per image | `<target>.provenance.json` (kas statement), `<target>.SHA256SUMS` (hash of every file of that image), `<target>.slsa.intoto.bundle` (attestation of the sums file) |
 | per release | `SHA256SUMS` (hashes of all sums files, statements, bundles, the pins file), `SHA256SUMS.bundle` (its CI signature), `pins_<branch>_<version>.yml` |
 | after promotion | `SHA256SUMS.<id>.sig` (engineer signatures), `PROMOTED` (when and by what) |
 
 The file list of an image is a first guess; the SDK and the OCI archives of the builder and runner images are **not** collected yet (phase 2).
-Two images of one machine must have the same kernel (one kernel per machine directory); `release-collect.sh` refuses a second kernel with
-different content. Keep such images out of the `release` tier (found by `releasetest_0.0.1`).
+Every image folder has its own copy of the kernel and boot files, so two images of one machine may have different kernels (the
+older layout refused that; found by `releasetest_0.0.1`).
 
 ## 3 Preparing a release (agl-ucb) [rehearsed]
 
@@ -129,7 +130,7 @@ cosign verify-blob --bundle SHA256SUMS.bundle SHA256SUMS \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   --certificate-github-workflow-repository dl9pf-agl/agl-ucb --certificate-github-workflow-ref refs/tags/<branch>_<version>
 cosign verify-blob --key keys/release/<id>.pub --signature SHA256SUMS.<id>.sig --insecure-ignore-tlog=true SHA256SUMS   # engineer
-cd <machine>/deploy/images/<machine>
+cd <repo>/<machine>/<target>
 sha256sum -c <target>.SHA256SUMS                             # the image files
 cosign verify-blob-attestation --type https://slsa.dev/provenance/v1 --bundle <target>.slsa.intoto.bundle <the same certificate flags> <target>.SHA256SUMS
 ```
@@ -157,7 +158,6 @@ one VM per release build, and a read-only verified cache with a reproducible-bui
 
 | Message or symptom | Cause | Action |
 |---|---|---|
-| `release-collect: 'bzImage-…bin' is already in the release with different content (two images of … disagree)` | two images of one machine with different kernels in the `release` tier | keep one such image per machine in the tier (matrix edit in the layer) |
 | a build job passed but its files are not where the others are | the images of a release are on different hosts | not an error: the server merges them; with only one host in the pull sources, missing files mean *waiting* |
 | `promote: …: no signed files yet (the release asset is not published)` | the run is not finished, or `publish` failed | wait; look at the run; a second run for the same tag cannot create the release again |
 | `CI signature ok, waiting for engineer signatures (0 of N)` | normal until the signature file is in agl-ucb `master` and pulled | section 6 |

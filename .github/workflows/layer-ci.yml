@@ -232,7 +232,7 @@ jobs:
       - name: collect
         if: needs.matrix.outputs.mode == 'build' && env.AGL_NIGHTLY == '1'
         env:
-          NIGHTLY_REPO: ${{ matrix.repo }}   # the repo that owns the image: its folder in the nightly
+          IMAGE_REPO: ${{ matrix.repo }}   # the repo that owns the image: its folder in the nightly
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}
@@ -282,8 +282,8 @@ jobs:
       - name: yocto-check-layer
         run: agl-ci/ci/scripts/check-layer.sh
 
-  # Rename the nightly's partial directory to its final name once every build job of the run is done (nightly-finalize.sh),
-  # so the download-server pull never sees a half-written nightly. Same arrangement as release.yml's finalize job: it must
+  # Mark the nightly complete (<date>/COMPLETE) once every build job of the run is done (nightly-finalize.sh); each image is
+  # public already, since its own collect step. Same arrangement as release.yml's finalize job: it must
   # run as root in a container on the sidecar's Docker daemon, because this job cannot enter the cache directory itself.
   nightly-finalize:
     needs: [matrix, build]

@@ -33,7 +33,7 @@ mounts=(-v "$CACHE_DIR/dl:/srv/agl/dl:ro" -v "$CACHE_DIR/sstate:/srv/agl/sstate:
 [ ! -d "$CACHE_DIR/git" ] || mounts+=(-v "$CACHE_DIR/git:/srv/agl/git:ro")
 # release builds (release.yml) leave their files in staging/release/<branch>/<version>; the download server pulls them like dl and sstate
 [ ! -d "$CACHE_DIR/staging" ] || mounts+=(-v "$CACHE_DIR/staging:/srv/agl/staging:ro")
-# nightly builds (layer-ci.yml, nightly tier) are finalized into nightly/<date>; the download server pulls them with AREAS=nightly
+# nightly builds (layer-ci.yml, nightly tier) are published into nightly/<date>, image by image; the download server pulls them with AREAS=nightly
 # (kit/release/run.sh nightly). Without this mount the daemon does not offer the area and the pull skips it without an error.
 [ ! -d "$CACHE_DIR/nightly" ] || mounts+=(-v "$CACHE_DIR/nightly:/srv/agl/nightly:ro")
 if [ -n "${RSYNCD_NETWORK:-}" ]; then net=(--network "$RSYNCD_NETWORK"); listen=(--address "$bind" --port "$PORT")

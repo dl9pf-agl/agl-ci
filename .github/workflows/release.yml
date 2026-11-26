@@ -151,6 +151,7 @@ jobs:
         run: agl-ci/ci/scripts/vulnscout-scan.sh --deploy-dir "$AGL_TREE/build/tmp/deploy/images/$MACHINE" --target "$TARGET" --machine "$MACHINE"
       - name: collect
         env:
+          IMAGE_REPO: ${{ matrix.repo }}   # the repo that owns the image: its folder in the release
           MACHINE: ${{ matrix.machine }}
           FEATURES: ${{ matrix.features }}
           TARGET: ${{ matrix.target }}

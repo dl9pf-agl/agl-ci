@@ -13,8 +13,9 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 */5 * * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh
 17 3 * * * root flock -n /run/agl-release.lock /root/agl-ci/kit/release/run.sh cleanup
 
-# Nightly builds: never signed, never promoted - the pull IS the publish. Daily: remove nightly directories older than NIGHTLY_KEEP_DAYS (7).
-*/5 * * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly
+# Nightly builds, every minute (a test lab waits for them): never signed, never promoted - the pull IS the publish. Daily: remove
+# nightly directories older than NIGHTLY_KEEP_DAYS (7).
+* * * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly
 22 3 * * * root flock -n /run/agl-nightly.lock /root/agl-ci/kit/release/run.sh nightly cleanup
 
 # The mirror: pull dl, sstate and git of the build hosts every 5 minutes; refresh the bare git mirrors of the layer repositories every 30

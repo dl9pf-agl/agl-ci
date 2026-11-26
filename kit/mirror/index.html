@@ -19,7 +19,9 @@
   <dt><a href="/staging/">staging/</a></dt>
   <dd>Releases that were just built and are waiting for the engineer's signature. Not verified yet: do not use them.</dd>
   <dt><a href="/nightly/">nightly/</a></dt>
-  <dd>Nightly builds, by date: <code>nightly/&lt;date&gt;/&lt;repo&gt;/&lt;machine&gt;/deploy/images/...</code>, each with a <code>trowl-report/</code> and a <code>vulnscout-report/</code> next to the image. Best-effort, never signed, pruned after a few days.</dd>
+  <dd>Nightly builds, one folder per image: <code>nightly/&lt;date&gt;/&lt;repo&gt;/&lt;machine&gt;/&lt;target&gt;/</code>, with
+      <code>&lt;target&gt;.SHA256SUMS</code>, <code>build.toml</code>, <code>report-trowl/</code> and <code>report-vulnscout/</code>. Not signed, not verified, removed after a few days.
+      <code>&lt;date&gt;/COMPLETE</code> says that every image of that run is there.</dd>
 </dl>
 <!-- Add a folder for people here and, if it is a new mount, in kit/mirror/run.sh and locations.conf. The build caches are not listed on purpose. -->
 </body>

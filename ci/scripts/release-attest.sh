@@ -4,10 +4,10 @@
 #
 #   release-attest.sh --small <dir> --pins <pins file> --matrix <json> --out <dir> --branch <branch> --version <version>
 #
-#   --small   the files the build jobs uploaded, in the layout <machine>/deploy/images/<machine>/<target>.SHA256SUMS and
+#   --small   the files the build jobs uploaded, in the layout <repo>/<machine>/<target>/<target>.SHA256SUMS and
 #             <target>.provenance.json (the output of release-collect.sh)
 #   --pins    kas/releases/pins_<branch>_<version>.yml of the release tag
-#   --matrix  the matrix of the run, {"include":[{"machine":..., "target":..., ...}, ...]}: the images that must be there
+#   --matrix  the matrix of the run, {"include":[{"repo":..., "machine":..., "target":..., ...}, ...]}: the images that must be there
 #   --out     a NEW directory (must not exist) that receives the signed files, in the layout of the release directory
 #
 # Environment:
@@ -56,8 +56,8 @@ done
 [ -n "$out" ] && [ ! -e "$out" ] || die "--out must be a directory that does not exist yet: '$out'"
 command -v "$cosign" >/dev/null || die "cosign not found ($cosign)"
 command -v jq >/dev/null || die "jq not found"
-# The images of this release, one "machine target" pair per line. Names go into paths: only plain names pass.
-pairs="$(printf '%s' "$matrix" | jq -r '.include[] | "\(.machine) \(.target)"')" || die "--matrix is not a matrix JSON"
+# The images of this release, one "repo machine target" triple per line. Names go into paths: only plain names pass.
+pairs="$(printf '%s' "$matrix" | jq -r '.include[] | "\(.repo) \(.machine) \(.target)"')" || die "--matrix is not a matrix JSON"
 [ -n "$pairs" ] || die "the matrix has no image"
 mkdir -p "$out"
 work="$(mktemp -d "${TMPDIR:-/tmp}/release-attest.XXXXXX")"    # scratch space for the predicate files; kept
@@ -65,9 +65,10 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/release-attest.XXXXXX")"    # scratch space f
 # (The commands inside the loop get /dev/null as stdin: the loop reads its pairs from stdin, and a command that also read stdin would eat them.)
 # 1. Per image: check, attest, verify. The check refuses a statement that does not match the pins file BEFORE anything is signed.
 n=0
-while read -r machine target; do
-  [[ "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "bad names in the matrix: '$machine' '$target'"
-  rel="$machine/deploy/images/$machine"
+while read -r repo machine target; do
+  [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$repo" != null && "$machine" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$target" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+    || die "bad names in the matrix: '$repo' '$machine' '$target'"
+  rel="$repo/$machine/$target"
   sums="$small/$rel/$target.SHA256SUMS"
   stmt="$small/$rel/$target.provenance.json"
   [ -f "$sums" ] && [ -f "$stmt" ] || die "files of $target on $machine are missing in $small/$rel (did its build job upload them?)"
@@ -77,10 +78,10 @@ while read -r machine target; do
   mkdir -p "$out/$rel"
   cp "$sums" "$stmt" "$out/$rel/"
   # The predicate is the part of the statement that says HOW the image was built; the sums file is the subject (its hash is what is signed).
-  jq .predicate "$stmt" > "$work/$machine.$target.predicate.json"
+  jq .predicate "$stmt" > "$work/$repo.$machine.$target.predicate.json"
   bundle="$out/$rel/$target.slsa.intoto.bundle"
   # shellcheck disable=SC2086   # the argument strings are meant to be split into words
-  "$cosign" attest-blob --yes --type "$PREDICATE_TYPE" --predicate "$work/$machine.$target.predicate.json" --bundle "$bundle" $sign_args "$out/$rel/$target.SHA256SUMS" < /dev/null > /dev/null
+  "$cosign" attest-blob --yes --type "$PREDICATE_TYPE" --predicate "$work/$repo.$machine.$target.predicate.json" --bundle "$bundle" $sign_args "$out/$rel/$target.SHA256SUMS" < /dev/null > /dev/null
   # shellcheck disable=SC2086
   "$cosign" verify-blob-attestation --type "$PREDICATE_TYPE" --bundle "$bundle" $verify_args "$out/$rel/$target.SHA256SUMS" < /dev/null > /dev/null \
     || die "$target on $machine: the attestation just made does not verify"

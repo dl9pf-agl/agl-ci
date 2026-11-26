@@ -7,7 +7,7 @@
 # cron lines stay short.
 #   kit/release/run.sh                     every 5 minutes
 #   kit/release/run.sh cleanup             daily
-#   kit/release/run.sh nightly             every 5 minutes
+#   kit/release/run.sh nightly             every minute (logs to the mirror log, it runs often)
 #   kit/release/run.sh nightly cleanup     daily
 #   kit/release/run.sh mirror              every 5 minutes: pull dl, sstate and git of the build hosts (kit/mirror/pull-sync.sh)
 #   kit/release/run.sh git                 every 30 minutes: refresh the git mirrors (kit/mirror/git-refresh.sh)
@@ -21,7 +21,7 @@ here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 # shellcheck source=/dev/null
 . "${RELEASE_ENV:-/etc/agl-release/promote.env}"
 log="${RELEASE_LOG:-/var/log/agl-release.log}"
-case "${1:-}" in mirror|git) log="${MIRROR_LOG:-/var/log/agl-mirror.log}" ;; esac
+case "${1:-} ${2:-}" in "mirror "|"git "|"nightly ") log="${MIRROR_LOG:-/var/log/agl-mirror.log}" ;; esac
 exec >> "$log" 2>&1
 echo "== $(date -u +%Y-%m-%dT%H:%M:%SZ) run.sh ${1:-} ${2:-}"
 # the two jobs of the mirror tree: no promotion, no exclude files (dl, sstate and git are content addressed)
