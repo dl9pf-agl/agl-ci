@@ -29,7 +29,7 @@ kas applies `overrides:` last; a later `repos:` commit does not beat an earlier 
 - Zero trust toward builders: no root key on a builder, the mirror sync is a **read-only rsync daemon container with read-only mounts and no credentials** (not a root ssh key). Do not reintroduce `rrsync`/ssh keys.
 - Production mirror transport: separate nginx plus HTTPS terminator; plain HTTP only on a controlled dev network; optional certbot container. 
 - **Never commit a host address** of the temporary dev mirror. The AGL production mirror URL is public and will be committed later (distro config or kas fragment); OEM members may use private mirrors, so keep `AGL_MIRROR_URL` overridable.
-- Runner image: JIT single-use config, unprivileged runner, privileged DinD sidecar per job on a private network; containers share the host kernel (VM-per-job is the later step for untrusted PRs at scale).
+- Runner image: JIT single-use config, unprivileged runner, DinD sidecar per job on a private network (privileged unless the host sets `SIDECAR_RUNTIME=sysbox-runc`); containers share the host kernel (VM-per-job is the later step for untrusted PRs at scale).
 
 ## Supply chain
 Actions pinned by full SHA (zizmor and actionlint in `scripts/lint.sh`). Builder and runner images are published by digest, cosign-signed and verified before use (`scripts/verify-release.sh`). CVE gate: `policy/cve.env` and `policy/vex/`; remaining Critical grype matches were Debian wont-fix. `sha_pinning_required` is `true` on all five repos (set 2026-10-29 after a scan found no unpinned `uses:`); the org-level setting is still `false`, so a new repo starts without it: run `scripts/github-settings.sh` for it. Open decision: keep the update churn (every action bump is a PR) or relax later.

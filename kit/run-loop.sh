@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# One runner slot. Per job: private network + workspace volume + privileged docker:dind sidecar,
+# One runner slot. Per job: private network + workspace volume + docker:dind sidecar (privileged, or under Sysbox: SIDECAR_RUNTIME),
 # then an UNprivileged runner container that talks to the sidecar (DOCKER_HOST) - so kas-container works.
 # Long-lived GH_TOKEN stays on the host; the runner container only gets a single-use JIT config.
 set -euo pipefail
 slot="${1:?slot}"
 # shellcheck disable=SC1091  # written by deploy.sh
 . /etc/agl-runner/runner.env   # ENGINE RUNNER_IMAGE DIND_IMAGE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS DIND CACHE_DIR POOL MIRROR_URL GIT_MIRROR
-#                               HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS and the limits: MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER
+#                               HASHSERV_RW HASHSERV_UPSTREAM SLOTS LINT_LABELS SIDECAR_RUNTIME and the limits: MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER
 #                               MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR, the same four with the prefix LINT_ for the lint slots
 #                               (MEM_LIMIT / CPU_LIMIT / LINT_MEM_LIMIT / LINT_CPU_LIMIT of an older runner.env are still read)
 # --- slot role: slots 1..SLOTS serve the pool label; the slots after them are lint slots (own label, small, no cache, no hash server)
@@ -41,6 +41,16 @@ hs_env=()   # shared hash equivalence server: read-write for trusted hosts, read
 [ -z "${HASHSERV_UPSTREAM:-}" ] || hs_env+=(-e AGL_HASHSERV_UPSTREAM="$HASHSERV_UPSTREAM")
 # No container gets /dev/kvm from the kit: no build or script boots anything (chapter 05, "/dev/kvm"). A privileged sidecar
 # still sees every host device.
+# --- begin sidecar isolation (kit/run-loop_test.sh runs this block)
+# SIDECAR_RUNTIME empty: the sidecar is --privileged, and a job can reach the host disk through it. sysbox-runc: Sysbox runs the
+# inner Docker daemon without --privileged (root in the sidecar is an unprivileged user on the host). Any other value stops the
+# slot (chapter 05, "Sysbox sidecar").
+case "${SIDECAR_RUNTIME:-}" in
+  "") sc_isolation=(--privileged) ;;
+  sysbox-runc) sc_isolation=(--runtime=sysbox-runc) ;;
+  *) echo "SIDECAR_RUNTIME must be empty or sysbox-runc: $SIDECAR_RUNTIME" >&2; exit 1 ;;
+esac
+# --- end sidecar isolation
 
 cleanup() { "$E" rm -fv "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
             "$E" network rm "agl-n$slot" >/dev/null 2>&1 || true
@@ -54,7 +64,7 @@ prepare() {
   "$E" network create "agl-n$slot" >/dev/null &&
   "$E" volume create "agl-w$slot" >/dev/null &&
   "$E" run --rm -v "agl-w$slot:/w" --user 0 --entrypoint chown "$RUNNER_IMAGE" 1001:1001 /w &&
-  "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}" \
+  "$E" run -d --rm "${sc_isolation[@]}" --name "agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}" \
       -e DOCKER_TLS_CERTDIR= -v "agl-w$slot:$WS" "${cache[@]}" "$DIND_IMAGE" >/dev/null || return 1
   for _ in $(seq 1 90); do   # sidecar needs up to ~70 s before it listens
     "$E" run --rm --network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" --entrypoint docker "$RUNNER_IMAGE" \

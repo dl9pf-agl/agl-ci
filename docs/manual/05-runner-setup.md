@@ -14,7 +14,8 @@ Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls
 3. Writes `/etc/agl-runner/runner.env` (0600; token only here), installs `run-loop.sh` and the systemd unit,
    starts `agl-runner@N`.
 Per job (`run-loop.sh`): private network, workspace volume and sidecar are prepared and health-checked FIRST; only then the JIT registration (single-use config) is requested, so a broken engine registers nothing. Details: private network, workspace volume (owned by uid 1001),
-privileged `docker:dind` sidecar pinned by digest (`DIND_IMAGE` in `docker/pins.env`) and an unprivileged runner
+`docker:dind` sidecar pinned by digest (`DIND_IMAGE` in `docker/pins.env`; privileged unless the host uses Sysbox, see
+"Sysbox sidecar") and an unprivileged runner
 container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no sidecar, kas runs directly in the
 runner image.
 
@@ -30,7 +31,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
    Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM; the kit passes no `/dev/kvm` today), `MEM_LIMIT_RUNNER`,
-   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
+   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `SIDECAR_RUNTIME` (see "Sysbox sidecar"), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -194,7 +195,7 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 ### Where things live
 | What | Where |
 |---|---|
-| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL GIT_MIRROR DIND CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
+| Config, token, pool | `/etc/agl-runner/runner.env` (root, 0600): `ENGINE GH_ORG GH_TOKEN RUNNER_GROUP_ID LABELS POOL MIRROR_URL GIT_MIRROR DIND SIDECAR_RUNTIME CACHE_DIR SLOTS LINT_SLOTS LINT_LABELS MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR RUNNER_IMAGE DIND_IMAGE` (a plain update keeps all of them; give a variable in the environment to change it) |
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
@@ -308,7 +309,8 @@ A restart kills the job in progress (the first pilot build died this way). Check
 Lesson (2026-10-22): the first version requested the JIT config before preparing the sidecar, so a failing engine created one stale runner registration every ~11 s (44 in 6 minutes).
 
 ## Security notes
-- The sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`. See "Sidecar privilege: what was tested" below.
+- By default the sidecar is privileged: a job can start privileged containers in it. Weaker than `DIND=0`. See "Sidecar privilege:
+  what was tested" and "Sysbox sidecar" below.
 - Containers share the host kernel; fine for a personal rig, VM-per-job for untrusted PRs at scale.
 - Runner container: non-root, default caps, `seccomp=unconfined` (bitbake `unshare()`).
 - Bind mounts besides the per-job workspace volume: only `CACHE_DIR` (read-write; one pool per host). The mirror web server mounts it read-only.
@@ -399,6 +401,37 @@ the uid mapping of the cache are unconfirmed); (3) one VM per slot, the only rea
 and the scripts contain no boot test (`testimage`, `runqemu`), so the kit passes it to no container any more. A privileged
 sidecar still sees all host devices, this one included. A boot-test job needs it added again, on slots of its own (the
 `agl-kvm` label is reserved for that).
+
+## Sysbox sidecar
+`SIDECAR_RUNTIME=sysbox-runc` starts the sidecar under [Sysbox](https://github.com/nestybox/sysbox) instead of `--privileged`.
+Root in the sidecar is then an unprivileged user on the host, and `/proc/sys` is virtualised. The runner container does not
+change. **Not tried on a build host yet** (2026-11-27): what is said here about Sysbox itself comes from its documentation and
+issue tracker.
+
+**Install first, then switch.** `deploy.sh` refuses the setting while Docker does not list the runtime, and never falls back to
+the privileged sidecar by itself.
+1. Wait until the host is idle, stop the slots. The Sysbox install guide asks to remove **all** containers first (a mirror web
+   server or `agl-rsyncd` must be started again afterwards).
+2. The installer edits `/etc/docker/daemon.json` and may restart Docker; it does not need to when `bip` and
+   `default-address-pools` are set there. Set them to the current values first, keep a copy of the file, and check the firewall
+   (IPv4 and IPv6) afterwards.
+3. Install the `sysbox-ce` package, checked against the sha256 of its release page.
+4. `SIDECAR_RUNTIME=sysbox-runc ./kit/update.sh`.
+
+**Go back:** `SIDECAR_RUNTIME= ./kit/update.sh` (the empty value counts). The installed package can stay.
+
+**Known limits and risks.**
+| Risk | What it means |
+|---|---|
+| Hang of `sysbox-fs` under many nested containers ([sysbox#1018](https://github.com/nestybox/sysbox/issues/1018), also Debian 13, kernel 6.12; open) | reported with v0.7.1, not shown fixed in v0.7.2. Containers stop answering; a reboot recovers. Watch for processes in state `D` |
+| Debian 13 is not in the list of supported distributions | the acceptance checks below decide |
+| No `/dev/kvm` in a Sysbox container ([sysbox#717](https://github.com/nestybox/sysbox/issues/717)) | the kit passes none anyway; a boot-test job needs another way |
+| All slots share one user mapping (community edition) and one kernel, and the cache stays read-write | weaker than one VM per slot |
+
+**Acceptance on a new host, before the slots use it:** nested containers on the inner bridge reach the network; the host disk is
+not readable and `core_pattern` of the host cannot be changed, also from a nested `--privileged` container; runner (uid 1001) and
+sidecar both write the workspace volume; the cache keeps its owners, also for the `--user 0` collect step; a user plus network
+namespace works in a nested builder container (bitbake); a real image build passes.
 
 ## Open points
 Necessity of `seccomp=unconfined` on the runner container (bitbake runs in the nested container, not in the runner container; untested); Podman path untested. (The old bare-host test runner

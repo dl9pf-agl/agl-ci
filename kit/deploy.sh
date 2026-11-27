@@ -17,6 +17,8 @@
 #               LABELS (default by POOL) CACHE_DIR (default /srv/agl-cache)
 #               HASHSERV_RW (trusted hosts) = host:port of the shared read-write hash server; HASHSERV_UPSTREAM (untrusted hosts) =
 #               host:port of the shared READ-ONLY one (agl-ci chapter 14). Both optional; an untrusted host never gets HASHSERV_RW.
+#               SIDECAR_RUNTIME (default empty = privileged sidecar) = sysbox-runc: the Docker sidecar runs under Sysbox, which
+#               must be installed first (agl-ci chapter 05). Kept by later deploys; SIDECAR_RUNTIME= (empty) goes back.
 #               POOL, MIRROR_URL, GIT_MIRROR and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
@@ -39,6 +41,8 @@ for p in $_legacy; do
   o="${p%%:*}"; n="${p##*:}"
   [ -n "${!n:-}" ] || { val="$(old "$o")"; [ -z "$val" ] || printf -v "$n" '%s' "$val"; }
 done
+# Unlike the settings above, an empty value that is given counts: it is how a host goes back to the privileged sidecar.
+SIDECAR_RUNTIME="${SIDECAR_RUNTIME-$(old SIDECAR_RUNTIME)}"
 # --- end settings restore
 ORG="${GH_ORG:-dl9pf-agl}"; SLOTS="${SLOTS:-1}"; LINT_SLOTS="${LINT_SLOTS:-1}"
 for v in SLOTS LINT_SLOTS; do [[ "${!v}" =~ ^[0-9]+$ ]] || { echo "$v must be a number, got: ${!v}" >&2; exit 1; }; done
@@ -61,6 +65,19 @@ if [ -z "$ENGINE" ]; then
 fi
 command -v "$ENGINE" >/dev/null || { echo "$ENGINE not found" >&2; exit 1; }
 echo "engine: $ENGINE"
+
+# --- begin sidecar runtime check (kit/deploy_test.sh runs this block with a fake docker)
+# Refuse here what cannot work, before anything is written. There is no silent fallback to the privileged sidecar.
+case "$SIDECAR_RUNTIME" in
+  "") ;;
+  sysbox-runc)
+    [ "$ENGINE" = docker ] || { echo "SIDECAR_RUNTIME=sysbox-runc needs ENGINE=docker, not $ENGINE" >&2; exit 1; }
+    runtimes="$(docker info --format '{{range $name, $_ := .Runtimes}}{{println $name}}{{end}}')"
+    grep -qx sysbox-runc <<<"$runtimes" ||
+      { echo "Docker does not list the runtime sysbox-runc: install Sysbox first (agl-ci chapter 05)" >&2; exit 1; } ;;
+  *) echo "SIDECAR_RUNTIME must be empty or sysbox-runc, got: $SIDECAR_RUNTIME" >&2; exit 1 ;;
+esac
+# --- end sidecar runtime check
 
 # --- verify token can manage org runners before touching anything else
 code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
@@ -112,6 +129,7 @@ LINT_CPU_LIMIT_RUNNER=${LINT_CPU_LIMIT_RUNNER:-2}
 LINT_MEM_LIMIT_SIDECAR=${LINT_MEM_LIMIT_SIDECAR:-2g}
 LINT_CPU_LIMIT_SIDECAR=${LINT_CPU_LIMIT_SIDECAR:-2}
 DIND=${DIND:-1}
+SIDECAR_RUNTIME=$SIDECAR_RUNTIME
 CACHE_DIR=${CACHE_DIR:-/srv/agl-cache}
 SLOTS=$SLOTS
 LINT_SLOTS=$LINT_SLOTS
