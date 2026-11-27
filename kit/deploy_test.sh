@@ -3,7 +3,7 @@
 # shellcheck disable=SC2016,SC2086,SC2015  # intentional in this test: the scripts under test are single-quoted and must not expand here,
 #   $2 holds several VAR=value words, and the PASS/FAIL lines are not an if-then-else
 # Checks the "settings restore" block of kit/deploy.sh: what a plain update keeps, what a given variable changes, and how the old limit
-# names (MEM_LIMIT ...) become the RUNNER limits. Also SIDECAR_RUNTIME and the "sidecar runtime check" block. Usage: kit/deploy_test.sh [path-to-deploy.sh]
+# names (MEM_LIMIT ...) become the RUNNER limits. Also SIDECAR_RUNTIME and the "sidecar runtime" block. Usage: kit/deploy_test.sh [path-to-deploy.sh]
 set -u
 f="${1:-$(dirname "$0")/deploy.sh}"; fail=0; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 blk="$(sed -n '/^# --- begin settings restore/,/^# --- end settings restore/p' "$f")"
@@ -31,15 +31,15 @@ same "nothing stored: empty"                  "$(sidecar "" "")" "[]"
 same "stored runtime is kept"                 "$(sidecar "SIDECAR_RUNTIME=sysbox-runc\n" "")" "[sysbox-runc]"
 same "a given runtime beats the stored one"   "$(sidecar "SIDECAR_RUNTIME=\n" "SIDECAR_RUNTIME=sysbox-runc")" "[sysbox-runc]"
 same "a given empty value goes back"          "$(sidecar "SIDECAR_RUNTIME=sysbox-runc\n" "SIDECAR_RUNTIME=")" "[]"
-# the check: the third argument is what the fake docker lists
-chk="$(sed -n '/^# --- begin sidecar runtime check/,/^# --- end sidecar runtime check/p' "$f")"
-[ -n "$chk" ] || { echo "FAIL  no sidecar runtime check block in $f" >&2; exit 1; }
-check() { env -i PATH="$PATH" SIDECAR_RUNTIME="$1" ENGINE="$2" RUNTIMES="$3" bash -c 'set -euo pipefail
-docker() { printf "%s\n" $RUNTIMES; }
-'"$chk" >/dev/null 2>&1 && echo accepted || echo refused; }
-same "empty runtime needs no check"           "$(check "" podman "")" accepted
-same "sysbox-runc listed by docker"           "$(check sysbox-runc docker "runc sysbox-runc")" accepted
-same "sysbox-runc not listed"                 "$(check sysbox-runc docker "runc")" refused
-same "sysbox-runc with podman"                "$(check sysbox-runc podman "sysbox-runc")" refused
-same "unknown runtime"                        "$(check runc docker "runc")" refused
+# the runtime block: sysbox.sh is called for sysbox-runc only (the fake one exits with the third argument), and its failure stops
+chk="$(sed -n '/^# --- begin sidecar runtime (/,/^# --- end sidecar runtime$/p' "$f")"
+[ -n "$chk" ] || { echo "FAIL  no sidecar runtime block in $f" >&2; exit 1; }
+printf '#!/bin/sh\necho called\nexit "$SYSBOX_RC"\n' > "$t/sysbox.sh"; chmod +x "$t/sysbox.sh"
+check() { local out; if out="$(env -i PATH="$PATH" SIDECAR_RUNTIME="$1" ENGINE="$2" SYSBOX_RC="$3" here="$t" bash -c 'set -euo pipefail
+'"$chk" 2>/dev/null)"; then echo "accepted $out"; else echo "refused $out"; fi; }
+same "empty runtime does not touch Sysbox"    "$(check "" podman 1)" "accepted "
+same "sysbox-runc runs sysbox.sh"             "$(check sysbox-runc docker 0)" "accepted called"
+same "a failing sysbox.sh stops the deploy"   "$(check sysbox-runc docker 1)" "refused called"
+same "sysbox-runc with podman"                "$(check sysbox-runc podman 0)" "refused "
+same "unknown runtime"                        "$(check runc docker 0)" "refused "
 exit "$fail"
