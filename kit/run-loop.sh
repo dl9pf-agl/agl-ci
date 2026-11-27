@@ -39,10 +39,8 @@ fi
 hs_env=()   # shared hash equivalence server: read-write for trusted hosts, read-only upstream for untrusted ones (deploy.sh checks)
 [ -z "${HASHSERV_RW:-}" ] || hs_env+=(-e AGL_HASHSERV_RW="$HASHSERV_RW")
 [ -z "${HASHSERV_UPSTREAM:-}" ] || hs_env+=(-e AGL_HASHSERV_UPSTREAM="$HASHSERV_UPSTREAM")
-dev=(); [ -c /dev/kvm ] && dev=(--device /dev/kvm) || echo "warn: no /dev/kvm" >&2
-# /dev/kvm is root:kvm 0660 on Debian 13 and the runner user (uid 1001) has no groups, so it cannot open the device it is given: add the group of the
-# device (read here, the number differs per host). Trusted pool only: code of a fork pull request on an untrusted host gets no KVM. Not for gid 0.
-kvm_group=(); [ -c /dev/kvm ] && [ "${POOL:-trusted}" = trusted ] && [ "$(stat -c %g /dev/kvm)" != 0 ] && kvm_group=(--group-add "$(stat -c %g /dev/kvm)")
+# No container gets /dev/kvm from the kit: no build or script boots anything (chapter 05, "/dev/kvm"). A privileged sidecar
+# still sees every host device.
 
 cleanup() { "$E" rm -fv "agl-r$slot" "agl-d$slot" >/dev/null 2>&1 || true
             "$E" network rm "agl-n$slot" >/dev/null 2>&1 || true
@@ -56,7 +54,7 @@ prepare() {
   "$E" network create "agl-n$slot" >/dev/null &&
   "$E" volume create "agl-w$slot" >/dev/null &&
   "$E" run --rm -v "agl-w$slot:/w" --user 0 --entrypoint chown "$RUNNER_IMAGE" 1001:1001 /w &&
-  "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${dev[@]}" "${sc_limits[@]}" \
+  "$E" run -d --rm --privileged --name "agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}" \
       -e DOCKER_TLS_CERTDIR= -v "agl-w$slot:$WS" "${cache[@]}" "$DIND_IMAGE" >/dev/null || return 1
   for _ in $(seq 1 90); do   # sidecar needs up to ~70 s before it listens
     "$E" run --rm --network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" --entrypoint docker "$RUNNER_IMAGE" \
@@ -83,7 +81,7 @@ while :; do
             '{name:$n, runner_group_id:$g, labels:$l, work_folder:"_work"}')")" || { echo "JIT config request failed" >&2; backoff; continue; }
   cfg="$(jq -er .encoded_jit_config <<<"$resp")"; rid="$(jq -er .runner.id <<<"$resp")"
 
-  run=("$E" run --rm --name "agl-r$slot" "${dev[@]}" "${kvm_group[@]}" --security-opt seccomp=unconfined
+  run=("$E" run --rm --name "agl-r$slot" --security-opt seccomp=unconfined
        --memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER" --pids-limit 8192 -e JITCONFIG="$cfg")
   [ "${DIND:-1}" = 1 ] && run+=(--network "agl-n$slot" -e DOCKER_HOST="tcp://agl-d$slot:2375" -e KAS_CONTAINER_ENGINE=docker -v "agl-w$slot:$WS")
   [ -z "${CACHE_DIR:-}" ] || run+=("${cache[@]}" "${cache_env[@]}")

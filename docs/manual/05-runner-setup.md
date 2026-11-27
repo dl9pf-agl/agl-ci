@@ -16,7 +16,7 @@ Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls
 Per job (`run-loop.sh`): private network, workspace volume and sidecar are prepared and health-checked FIRST; only then the JIT registration (single-use config) is requested, so a broken engine registers nothing. Details: private network, workspace volume (owned by uid 1001),
 privileged `docker:dind` sidecar pinned by digest (`DIND_IMAGE` in `docker/pins.env`) and an unprivileged runner
 container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no sidecar, kas runs directly in the
-runner image and `/dev/kvm` goes straight to the container.
+runner image.
 
 ## Before the first deploy (GitHub side and runner image)
 Done once per organisation. The commands on the host itself are in the Runbook below ("First setup").
@@ -29,7 +29,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
 3. Pin the digest: `echo sha256:... > kit/runner.digest` (PR; the digest is printed by the `publish` job and
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
-   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM), `MEM_LIMIT_RUNNER`,
+   Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM; the kit passes no `/dev/kvm` today), `MEM_LIMIT_RUNNER`,
    `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
@@ -67,7 +67,7 @@ script of agl-ucb run in it. Tested on GitHub: the images workflow builds the im
 runs on the trusted pool (`agl-pr`). Not tested: a fork pull request of agl-ucb on the untrusted pool.
 
 ### Labels
-`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-lint` and `agl-fork-lint`: the lint slots of a trusted and of an untrusted host (see "Lint slots"). `agl-kvm`: reserved for jobs that need `/dev/kvm`. Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
+`agl-pr`: pull-request and push builds (default of the kit, used by `runner-smoke.yml`). `agl-fork`: pull requests from forks, on untrusted hosts only (see "Pools"). `agl-lint` and `agl-fork-lint`: the lint slots of a trusted and of an untrusted host (see "Lint slots"). `agl-kvm`: reserved for jobs that need `/dev/kvm` (the kit passes none today, see "/dev/kvm"). Changing labels on an existing host: edit `LABELS=` in `/etc/agl-runner/runner.env`, `systemctl restart agl-runner@N`.
 
 ## Lint slots
 Lint and preparation jobs (`repo-lint.yml`, used by agl-ucb) must not wait behind a cold build that holds both pool slots for a day. So
@@ -153,8 +153,8 @@ Hash equivalence and PR servers: chapter 14. To empty the cache see "Reset and r
 ## Host requirements and what the kit does not assume
 - **Needed on the host:** Linux with systemd; Debian or Ubuntu (`deploy.sh` uses `apt-get`, and installs Docker if it is missing);
   root or `sudo`; a rootful Docker (rootless Docker and Podman are untested); network access to GitHub and GHCR; a file system
-  for `CACHE_DIR` that supports Unix owners and modes (not a root-squashed NFS); for QEMU boot tests `/dev/kvm`. On Debian 13 it is `root:kvm 0660`, not world-readable, so `run-loop.sh` gives the runner container the group of the device
-  (`--group-add`, the gid is read from the host: 993 on one of ours), on the trusted pool only; fork code on an untrusted host gets no KVM. On hosts with SELinux enforcing the bind mounts would need `:z`; not done.
+  for `CACHE_DIR` that supports Unix owners and modes (not a root-squashed NFS). `/dev/kvm` is not needed. On hosts with SELinux
+  enforcing the bind mounts would need `:z`; not done.
 - **Not needed and not assumed:** any particular user or uid on the host. The runner runs as uid 1001 *inside* the signed image;
   no account with that uid has to exist on the host, and an account that happens to have it (or any other uid) gains nothing.
   Reason: Docker does not remap uids, so the numeric owner of the two mounted cache folders is all that connects the container to
@@ -395,9 +395,10 @@ outer engine of the build hosts. Candidates, in order of effort: (1) variant C o
 needs `--runtime-args --network=host` for kas-container; (2) Sysbox, which virtualises `/proc/sys` (community-maintained; `/dev/kvm`, a Debian 13 package and
 the uid mapping of the cache are unconfirmed); (3) one VM per slot, the only real boundary and the most work.
 
-**`/dev/kvm`.** `run-loop.sh` passes it to the sidecar and the runner whenever the host has it. It was meant for QEMU boot tests, but the build matrix and the
-scripts contain no boot test (`testimage`, `runqemu`); the only user is `runner-smoke.yml`, which lists the device. The build does not need it, so it can be
-dropped from both containers until a boot-test job exists (the `agl-kvm` label is reserved for that).
+**`/dev/kvm`.** Until 2026-11-27 `run-loop.sh` passed it to the sidecar and the runner, meant for QEMU boot tests. The build matrix
+and the scripts contain no boot test (`testimage`, `runqemu`), so the kit passes it to no container any more. A privileged
+sidecar still sees all host devices, this one included. A boot-test job needs it added again, on slots of its own (the
+`agl-kvm` label is reserved for that).
 
 ## Open points
 Necessity of `seccomp=unconfined` on the runner container (bitbake runs in the nested container, not in the runner container; untested); Podman path untested. (The old bare-host test runner

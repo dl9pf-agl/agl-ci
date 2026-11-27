@@ -57,8 +57,7 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
 2. **Tunnel:** a WireGuard interface between the new builder and the mirror host (a private /24, one address each); a ping both ways. The
    hash server read-write ports and the rsync daemon are reachable only through it.
 3. **Kit:** `sudo POOL=trusted SLOTS=2 LINT_SLOTS=1 MEM_LIMIT_SIDECAR=55g MIRROR_URL=http://<mirror-tunnel-address>:8080 HASHSERV_RW=<mirror-tunnel-address>:9393 ./kit/deploy.sh <token-file>`
-   (chapter 05; the values are kept in `/etc/agl-runner/runner.env`, a later `kit/update.sh` reuses them). The host needs the gid of `/dev/kvm`: the kit reads it
-   (`--group-add`, trusted pool only).
+   (chapter 05; the values are kept in `/etc/agl-runner/runner.env`, a later `kit/update.sh` reuses them).
 4. **Cache:** the new builder starts empty and restores from the mirror (`MIRROR_URL`); the first gate is cold (16 minutes for meta-agl instead of 7).
 5. **Feed the mirror back:** `kit/mirror/rsyncd.sh` on the builder, the pull cron on the mirror host (above). Without it new objects never reach the other hosts.
 6. **Git mirror:** `GIT_MIRROR=1 ./kit/update.sh` on the builder, when no job runs (chapter 15).
