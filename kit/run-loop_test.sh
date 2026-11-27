@@ -3,7 +3,8 @@
 # shellcheck disable=SC2016,SC2086,SC2015  # intentional in this test: the scripts under test are single-quoted and must not expand here,
 #   $2 holds several VAR=value words, and the PASS/FAIL lines are not an if-then-else
 # Checks the "slot role" block of kit/run-loop.sh: slots 1..SLOTS keep the pool settings, the slots after them become lint slots, and the
-# limits of the runner container and of the Docker sidecar (options of the sidecar's docker run) come out right.
+# limits of the runner container and of the Docker sidecar (options of the sidecar's docker run) come out right. Also the "sidecar
+# isolation" block: which options SIDECAR_RUNTIME gives the sidecar.
 # Usage: kit/run-loop_test.sh [path-to-run-loop.sh]
 set -u
 f="${1:-$(dirname "$0")/run-loop.sh}"; fail=0
@@ -28,8 +29,19 @@ expect "old names MEM_LIMIT / CPU_LIMIT still bound the runner"   "agl-pr 32g/12
 expect "the pool sidecar limits do not leak into a lint slot"     "agl-lint 4g/2 [--memory 2g --cpus 2] [] [] [] []"  3 2 MEM_LIMIT_SIDECAR=28g CPU_LIMIT_SIDECAR=7
 expect "lint slot limits given"                                   "agl-lint 1g/1 [--memory 3g --cpus 1] [] [] [] []"  3 2 LINT_MEM_LIMIT_RUNNER=1g LINT_CPU_LIMIT_RUNNER=1 LINT_MEM_LIMIT_SIDECAR=3g LINT_CPU_LIMIT_SIDECAR=1
 expect "old lint names LINT_MEM_LIMIT / LINT_CPU_LIMIT still bound the lint runner" "agl-lint 8g/4 [--memory 2g --cpus 2] [] [] [] []"  3 2 LINT_MEM_LIMIT=8g LINT_CPU_LIMIT=4
+# sidecar isolation: the options of the sidecar for each value of SIDECAR_RUNTIME
+iso="$(sed -n '/^# --- begin sidecar isolation/,/^# --- end sidecar isolation/p' "$f")"
+[ -n "$iso" ] || { echo "FAIL  no sidecar isolation block in $f" >&2; exit 1; }
+isolation() { env -i PATH="$PATH" "$@" bash -c 'set -u
+'"$iso"'
+echo "${sc_isolation[*]}"' 2>/dev/null || echo "refused"; }
+want() { local what="$1" w="$2" got; shift 2; got="$(isolation "$@")"; if [ "$got" = "$w" ]; then echo "ok    $what"; else echo "FAIL  $what: got '$got', want '$w'"; fail=1; fi; }
+want "no SIDECAR_RUNTIME (older runner.env): privileged"   "--privileged"
+want "empty SIDECAR_RUNTIME: privileged"                   "--privileged" SIDECAR_RUNTIME=
+want "sysbox-runc: that runtime, not privileged"           "--runtime=sysbox-runc" SIDECAR_RUNTIME=sysbox-runc
+want "an unknown runtime stops the slot"                   "refused" SIDECAR_RUNTIME=runc
 # the options must really reach the two docker run calls: the sidecar gets sc_limits, the runner container gets the RUNNER limits
-grep -qF '"agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the sidecar limits" || { echo "FAIL  the sidecar docker run does not use sc_limits"; fail=1; }
+grep -qF '"${sc_isolation[@]}" --name "agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the isolation options and the limits" || { echo "FAIL  the sidecar docker run does not use sc_isolation and sc_limits"; fail=1; }
 grep -qF -- '--memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER"' "$f" && echo "ok    the runner docker run gets the runner limits" || { echo "FAIL  the runner docker run does not use the RUNNER limits"; fail=1; }
 grep -v '^ *#' "$f" | grep -qE -- '/dev/kvm|--device' && { echo "FAIL  run-loop.sh passes a device (/dev/kvm) to a container" >&2; fail=1; } || echo "ok    no container gets /dev/kvm"
 grep -qF -- '-e AGL_GIT_MIRROR=1' "$f" && echo "ok    GIT_MIRROR=1 reaches the job as AGL_GIT_MIRROR" || { echo "FAIL  run-loop.sh does not pass AGL_GIT_MIRROR" >&2; fail=1; }

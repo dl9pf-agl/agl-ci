@@ -3,7 +3,7 @@
 # shellcheck disable=SC2016,SC2086,SC2015  # intentional in this test: the scripts under test are single-quoted and must not expand here,
 #   $2 holds several VAR=value words, and the PASS/FAIL lines are not an if-then-else
 # Checks the "settings restore" block of kit/deploy.sh: what a plain update keeps, what a given variable changes, and how the old limit
-# names (MEM_LIMIT ...) become the RUNNER limits. Usage: kit/deploy_test.sh [path-to-deploy.sh]
+# names (MEM_LIMIT ...) become the RUNNER limits. Also SIDECAR_RUNTIME and the "sidecar runtime check" block. Usage: kit/deploy_test.sh [path-to-deploy.sh]
 set -u
 f="${1:-$(dirname "$0")/deploy.sh}"; fail=0; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 blk="$(sed -n '/^# --- begin settings restore/,/^# --- end settings restore/p' "$f")"
@@ -21,4 +21,25 @@ expect "a given old name beats the stored new name"      "MEM_LIMIT_RUNNER=24g\n
 expect "a given new name beats a given old name"         "" "MEM_LIMIT=32g MEM_LIMIT_RUNNER=16g" "R=16g/ S=/ L=/// SLOTS="
 expect "stored new name beats stored old name"           "MEM_LIMIT=24g\nMEM_LIMIT_RUNNER=10g\n" "" "R=10g/ S=/ L=/// SLOTS="
 expect "nothing stored, nothing given: stays empty (defaults come later)" "" "" "R=/ S=/ L=/// SLOTS="
+# SIDECAR_RUNTIME: kept by a plain update, and an empty value that is given goes back to the privileged sidecar
+sidecar() { printf '%b' "$1" > "$t/runner.env"
+  env -i PATH="$PATH" $2 ENVFILE="$t/runner.env" bash -c 'old() { sed -n "s/^$1=//p" "$ENVFILE"; }
+'"$blk"'
+echo "[$SIDECAR_RUNTIME]"'; }
+same() { if [ "$2" = "$3" ]; then echo "ok    $1"; else echo "FAIL  $1: got '$2', want '$3'"; fail=1; fi; }
+same "nothing stored: empty"                  "$(sidecar "" "")" "[]"
+same "stored runtime is kept"                 "$(sidecar "SIDECAR_RUNTIME=sysbox-runc\n" "")" "[sysbox-runc]"
+same "a given runtime beats the stored one"   "$(sidecar "SIDECAR_RUNTIME=\n" "SIDECAR_RUNTIME=sysbox-runc")" "[sysbox-runc]"
+same "a given empty value goes back"          "$(sidecar "SIDECAR_RUNTIME=sysbox-runc\n" "SIDECAR_RUNTIME=")" "[]"
+# the check: the third argument is what the fake docker lists
+chk="$(sed -n '/^# --- begin sidecar runtime check/,/^# --- end sidecar runtime check/p' "$f")"
+[ -n "$chk" ] || { echo "FAIL  no sidecar runtime check block in $f" >&2; exit 1; }
+check() { env -i PATH="$PATH" SIDECAR_RUNTIME="$1" ENGINE="$2" RUNTIMES="$3" bash -c 'set -euo pipefail
+docker() { printf "%s\n" $RUNTIMES; }
+'"$chk" >/dev/null 2>&1 && echo accepted || echo refused; }
+same "empty runtime needs no check"           "$(check "" podman "")" accepted
+same "sysbox-runc listed by docker"           "$(check sysbox-runc docker "runc sysbox-runc")" accepted
+same "sysbox-runc not listed"                 "$(check sysbox-runc docker "runc")" refused
+same "sysbox-runc with podman"                "$(check sysbox-runc podman "sysbox-runc")" refused
+same "unknown runtime"                        "$(check runc docker "runc")" refused
 exit "$fail"
