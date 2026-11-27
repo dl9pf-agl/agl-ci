@@ -163,8 +163,8 @@ Because meta-trowl is a repo of the build, `release-check.py` needs it in the re
 `prepare-release.sh` locks every `kas/feature/*.yml` of agl-ucb.
 
 **VulnScout** (`github.com/savoirfairelinux/meta-vulnscout`) runs from the runner, for a security reason: its own bitbake task
-(`vulnscout_ci`) calls `docker` from inside the task, which would hand the untrusted build environment the privileged sidecar Docker
-daemon (chapter 05: a job that reaches the sidecar can read the raw host disk via a nested privileged container). So CI never
+(`vulnscout_ci`) calls `docker` from inside the task, which would hand the untrusted build environment the sidecar's Docker
+daemon (chapter 05: with the default privileged sidecar, a job that reaches it can read the raw host disk via a nested privileged container). So CI never
 inherits the `vulnscout` bbclass. `AGL_VULNSCOUT=1` picks a different kas fragment depending on `CI`: with `CI=true`,
 `kas/local/vulnscout-sbom.yml` (plain `create-spdx`, no docker); without it (a developer's workstation), `kas/local/vulnscout.yml`
 (the full bbclass, safe there because it is the developer's own daemon). The workflow step `scan (vulnscout)` then runs

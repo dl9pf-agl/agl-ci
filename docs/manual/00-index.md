@@ -27,7 +27,8 @@ The chapters keep their numbers because scripts, skills and other chapters cite 
 ### Part C Build hosts
 | # | Chapter | Content |
 |---|---------|---------|
-| 05 | [Runner setup](05-runner-setup.md) | Debian 13 host, deploy kit, GitHub org settings |
+| 05 | [Runner setup](05-runner-setup.md) | Debian 13 host, runner kit, pools, sidecar and Sysbox, GitHub org settings |
+| 20 | [Host setup and update](20-host-setup.md) | One script per machine role: calls, every step, settings, refusals, Sysbox rollout |
 | 18 | [Fleet, sizing and moves](18-fleet-and-sizing.md) | Hosts and data flows, moving a runner, adding a node, debugging a host, benchmark numbers, cost |
 
 ### Part D Layer CI
@@ -49,7 +50,7 @@ The chapters keep their numbers because scripts, skills and other chapters cite 
 | 17 | [Demo run-through](17-demo-script.md) | Seven scenes with commands and expected output, checklist for the evening before |
 
 ## Which chapter do I need?
-- Host administrator (set up, update or repair a build host): 05, then 15 for mirrors and caches, 18 for the fleet, moves and sizing.
+- Host administrator (set up, update or repair a host): 20, then 05, then 15 for mirrors and caches, 18 for the fleet, moves and sizing.
 - Layer maintainer (matrix, callers, a red or empty CI run): 13.
 - Release engineer (signing, keys, hand-over): 06, 04.
 - Security reviewer (trust rules, CVE policy, hardening): 01, 12, 13 ("Trust rules"), 09.

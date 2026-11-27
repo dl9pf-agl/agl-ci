@@ -61,5 +61,5 @@ quick measure of that (chapter 13).
 ## Scene 7: what is not done (5 minutes, keep it honest)
 - The three layer repos are still behind the upstream at `git.automotivelinux.org` (the rebase is planned, it needs a ruleset lift for the force push).
 - Shelved: the KVM demo on x86-64 (install step) and the Xen test image on x86-64 (guest machine); both come from the layers' `MACHINE` hooks under kas (chapter 13). The Xen test image builds on raspberrypi5 (1 h 36 min) but without its Xen-specific boot setup, for the same reason; it is not in the matrix yet.
-- The Docker sidecar of a job is privileged: it separates a job from the host kernel only as far as containers do, so one pool per host is the real boundary (chapter 05, "Sidecar privilege").
+- The Docker sidecar of a job is privileged (unless the host uses Sysbox, chapter 05): it separates a job from the host kernel only as far as containers do, so one pool per host is the real boundary (chapter 05, "Sidecar privilege").
 - An equivalence that saved a rebuild through the hash server has not been seen yet; the mirror runs over plain HTTP.

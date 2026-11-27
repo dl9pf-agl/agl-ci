@@ -84,3 +84,13 @@ Each entry: decision, reason, alternatives not taken.
 | Full-SHA pinning of actions enforced on all five repos (2026-10-29); the update churn is to be reviewed later | Supply-chain rule; a scan showed no unpinned `uses:` | Enforce on agl-ci only |
 | The trusted hosts refuse a pull request whose head repository is not the repository itself, through a job-started hook in the runner image (2026-10-29) | The workflow file of a fork pull request is the fork's own and can name the trusted label; a hook runs on the host before any step and reads GitHub's payload; needs no paid plan | Restrict the runner group to the reusable workflows (needs the Team plan per the docs, matching of SHA-pinned workflows unknown); rely on the approval policy alone |
 | Claude Code guidance = plain `.claude/skills/` in each repo; no plugin, no marketplace | Simple, reviewable with the code; shared skills are copies | A plugin from a marketplace repo |
+
+## Build hosts (decided 2026-11-27)
+| Decision | Reason | Alternatives considered |
+|---|---|---|
+| Sysbox for the Docker sidecar, switched per host (`SIDECAR_RUNTIME`), the privileged sidecar stays the default until the acceptance checks passed | The privileged sidecar can read the host disk; narrowing capabilities broke the inner bridge network (chapter 05) | Capabilities only; one VM per slot (stronger, most work); `DIND=0` |
+| No container gets `/dev/kvm` | No build or script boots an image; Sysbox cannot pass the device | Keep it for later boot tests |
+| `sysbox.sh` writes Docker's current network settings into `daemon.json` before installing | The package then needs no Docker restart and no container removal | Follow the install guide (remove all containers) |
+| One host script per role, with `--check` and `--run`; no argument does nothing | A host can be looked at safely, and set up or updated the same way | Manual steps; one script with a role option |
+| The host scripts never change tunnel, firewall, hash server, TLS or secrets | A wrong automatic change can lock out the owner or open a port | Manage them too |
+

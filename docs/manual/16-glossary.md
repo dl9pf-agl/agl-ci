@@ -35,7 +35,9 @@ Terms in alphabetical order inside each group. The chapter that explains a term 
 | pool | A class of hosts: trusted (label `agl-pr`: same-repo pull requests, push, nightly, release) or untrusted (label `agl-fork`: fork pull requests) | 05 |
 | host, slot | A physical machine serves one pool; it runs 1..n slots (`agl-runner@N`), each building one job at a time | 05 |
 | JIT runner | A runner registered with a single-use config for one job | 05 |
-| DinD sidecar | The privileged `docker:dind` container per job that the unprivileged runner container uses | 05 |
+| DinD sidecar | The `docker:dind` container per job that the unprivileged runner container uses; privileged by default, or under Sysbox | 05 |
+| Sysbox | A second container runtime (`sysbox-runc`) that runs the sidecar without `--privileged`: root inside is an unprivileged user on the host | 05, 20 |
+| role, host script | What a machine is for (trusted builder, untrusted builder, download server); each role has one script that brings a host up to date | 20 |
 | `CACHE_DIR` | The host's cache with `sstate/` and `dl/`; on a trusted host it is also the mirror | 05, 15 |
 
 ## Yocto and caches

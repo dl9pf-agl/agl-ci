@@ -22,12 +22,12 @@ The host that runs trusted jobs and the host that runs fork code are different m
 ### Data flows between the hosts
 | From | To | What | How it is kept closed |
 |---|---|---|---|
-| Builder | Mirror host | New `dl/` and `sstate/` objects | The builder runs a read-only rsync daemon (`kit/mirror/rsyncd.sh`, container `agl-rsyncd`) bound to its tunnel address; `hosts allow` admits the mirror host only. The mirror host pulls every 5 minutes (`kit/mirror/pull-sync.sh` from `/etc/cron.d/agl-pull-sync`, `--ignore-existing --delay-updates`) |
+| Builder | Mirror host | New `dl/` and `sstate/` objects | The builder runs a read-only rsync daemon (`kit/mirror/rsyncd.sh`, container `agl-rsyncd`) bound to its tunnel address; `hosts allow` admits the mirror host only. The mirror host pulls every 5 minutes (`kit/mirror/pull-sync.sh` from `/etc/cron.d/agl-server`, `--ignore-existing --delay-updates`) |
 | Mirror host | Builder | Hash server read-write (9393), mirror web (8080), git mirror (`/git`) | Private tunnel (WireGuard) between the two hosts; the read-write ports are dropped on the public interface by a `DOCKER-USER` rule in `/etc/ufw/after.rules` (it survives a reboot: ufw is enabled) |
 | Mirror host | Everybody | Mirror web (8080), hash server read-only (9292/9494) | Public, read-only |
-| Upstreams | Mirror host | Layer repositories, every 30 minutes (`/etc/cron.d/agl-git-mirrors`, 23 repositories) | Outbound only |
+| Upstreams | Mirror host | Layer repositories, every 30 minutes (`kit/server.cron`, 23 repositories) | Outbound only |
 | Builder | Upstreams | Only the fetch pass: sources (`mode: fetch` reads the real upstreams); layers come from the git mirror when `GIT_MIRROR=1` (chapter 15) | Outbound only |
-| Builders | Mirror host (download server) | `staging/release/<branch>/<version>/` of every build host, every 5 minutes (`kit/release/run.sh`, `/etc/cron.d/agl-release`) | Same rsync daemon and walls as `dl/` and `sstate/`; the mirror host is a build host too and fills the same tree directly |
+| Builders | Mirror host (download server) | `staging/release/<branch>/<version>/` of every build host, every 5 minutes (`kit/release/run.sh`, `/etc/cron.d/agl-server`) | Same rsync daemon and walls as `dl/` and `sstate/`; the mirror host is a build host too and fills the same tree directly |
 | Mirror host | GitHub | `git pull` of agl-ucb (engineer signatures), download of the signed release asset | Outbound only, anonymous (public repository) |
 
 Ufw does not see ports that Docker publishes. The walls are therefore the bind address of the published port, `hosts allow` of the rsync daemon and the
@@ -190,7 +190,7 @@ Known open items on that date: the Debian tracker lists runc 1.1.15 in trixie as
 CVEs (CVE-2026-92542, -92543). The jobs run in the Docker daemon of a privileged sidecar, so a job already has far-reaching rights on its host; whether the host runc is the deciding
 weakness was not tested *(inference)*.
 
-**SCTP block** (`install sctp /bin/false`): no job needs SCTP, and the kernel bugs of the SCTP stack (send path, CVE-2026-46227; ASCONF "SCTPhantom", CVE-2026-64564, third-party
+**SCTP block** (`install sctp /bin/false`, written by the host scripts of chapter 20): no job needs SCTP, and the kernel bugs of the SCTP stack (send path, CVE-2026-46227; ASCONF "SCTPhantom", CVE-2026-64564, third-party
 sources, not checked against kernel.org) can be reached by any process that opens an SCTP socket, which loads the module. On each host, as root:
 ```
 echo 'install sctp /bin/false' > /etc/modprobe.d/disable-sctp.conf
@@ -209,4 +209,4 @@ or `rewrite`, and the TLS port is off, so the paths of the article do not apply;
 - A cold event on several nodes, measured.
 - Move the mirror image to nginx 1.30.7 or later (the kernels are updated since 2026-11-18).
 - IPv6: test the read-write hash ports from outside once the mirror host gets a global address; consider binding 9191 and 9393 to the tunnel address instead of every address.
-- Backups of the hash server database, pruning, log rotation of `/var/log/agl-pull-sync.log` and `/var/log/agl-git-mirrors.log`.
+- Backups of the hash server database, pruning, log rotation of `/var/log/agl-release.log` and `/var/log/agl-mirror.log`.

@@ -7,7 +7,8 @@ Status: running on the trusted build host since 2026-10-22 (kit in `kit/`, pulls
 (`kit/mirror/`) runs on the trusted host. The runbook below covers setup, daily use, reset and troubleshooting.
 
 ## What the kit does
-`kit/deploy.sh` (systemd + Docker/Podman, run from a checkout of this repo):
+Most hosts are set up and updated with the script of their role ("Host scripts" below, chapter 20). Underneath,
+`kit/deploy.sh` (systemd + Docker/Podman, run from a checkout of this repo) installs the runner slots:
 1. Reads the pinned runner digest from `kit/runner.digest` (or env `RUNNER_DIGEST`).
 2. Installs a sha256-pinned `cosign` if missing, runs `cosign verify` with the CI identity from
    `policy/project.env`, pulls `ghcr.io/<owner>/agl-ci/runner@<digest>`. Nothing is built on the host.
@@ -20,27 +21,11 @@ container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no si
 runner image.
 
 ## Host scripts (one per role)
-Each role of a machine has one script in `kit/`. It reads the state of the host, changes only what differs from the checkout, and
-is safe to run again. Use it for a new machine and to bring an existing one up to date.
-
-| Role | Script | Brings up |
-|---|---|---|
-| Trusted build host | `trusted-pr-install-host.sh` | runner kit (pool `trusted`), cache areas, prune cron, rsync daemon |
-| Untrusted build host | `untrusted-fork-pr-install-host.sh` | runner kit (pool `untrusted`) |
-| Download server | `download-server-install-host.sh` | pinned cosign, published tree, `promote.env`, clones, server cron, mirror web server |
-
-Run it from a checkout on the host: `sudo kit/<script> --check` (report only), then `sudo kit/<script> --run` (apply; a new
-build host takes its settings from the environment and its token from a file or a prompt, see the header of the script). Without
-`--check` or `--run` it only prints its usage. `--run` first does `git pull --ff-only`. Lines of the report: `ok`, `changed`, `differs` (`--check`), `pending` (a slot runs a job: run it again
-later), `TODO` (a person's task), `note`. Exit status 0 current, 3 not current yet, 1 refused or failed.
-
-- Build roles call `deploy.sh` when the installed loop script, unit, image digests or a given setting differ, and `sysbox.sh`
-  with `SIDECAR_RUNTIME=sysbox-runc`. A stale slot is restarted only when it runs no job. `NODE_TUNING=1` installs the build node
-  tuning once; later runs keep it current.
-- A host keeps one role: each script refuses a host that shows signs of another one.
-- Not changed by any script, only reported: the WireGuard tunnel, `ufw` and `DOCKER-USER` rules, the hash server, a TLS
-  certificate, release keys, GitHub tokens.
-- **Not run on a real host yet** (2026-11-27): tested with stubs (`kit/host_test.sh`). Start with `--check`.
+`kit/trusted-pr-install-host.sh`, `kit/untrusted-fork-pr-install-host.sh` and `kit/download-server-install-host.sh` bring a new
+or an existing host to the state of the checkout: `--check` reports, `--run` applies, no argument prints the usage. A build
+role calls `deploy.sh` (and `sysbox.sh` when asked) and restarts idle slots only. **The complete reference, with every step,
+setting, message and the Sysbox rollout, is [20 Host setup and update](20-host-setup.md).** Not run on a real host yet
+(2026-11-27). This chapter explains the runner kit underneath.
 
 ## Before the first deploy (GitHub side and runner image)
 Done once per organisation. The commands on the host itself are in the Runbook below ("First setup").
@@ -59,7 +44,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
 ## Pools (trusted and untrusted hosts)
-**A host serves one pool only; trusted and untrusted never share a physical server** (the privileged DinD sidecar and
+**A host serves one pool only; trusted and untrusted never share a physical server** (the DinD sidecar, privileged by default, and
 the shared kernel make anything else weak). `POOL` is `trusted` (default) or `untrusted`, `SLOTS` is the number of slots
 on this host (1..n); a pool can span several hosts.
 
@@ -74,7 +59,7 @@ mirror or the hash equivalence database. `MIRROR_URL` reaches the build as `AGL_
 (chapter 15, "Consumer settings"). `GIT_MIRROR=1` (only together with `MIRROR_URL`) makes the layer clones of kas come from the mirror's `/git/` instead of github.com, which avoids GitHub's throttling of anonymous clones (chapter 15).
 
 Set up: the existing host stays as it is (trusted; hosts from before the pools count as trusted). A second machine for
-fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`. `POOL` and
+fork pull requests: `POOL=untrusted MIRROR_URL=https://mirror.example/ SLOTS=2 ./kit/deploy.sh <token-file>`, or with its role script (chapter 20). `POOL` and
 `MIRROR_URL` (and `GIT_MIRROR`) are kept by later deploys and `kit/update.sh`; changing the pool of a host needs `FORCE_POOL_CHANGE=1` and
 an emptied `CACHE_DIR`. The shared hash server is given with `HASHSERV_RW=host:9393` (trusted hosts) or
 `HASHSERV_UPSTREAM=host:9494` (untrusted hosts); `deploy.sh` refuses the wrong one for the pool (chapter 14). `layer-ci.yml` sends fork pull requests to `agl-fork` and everything else to `agl-pr` (chapter 13), so
@@ -140,7 +125,8 @@ before it goes to disk, and which kernel caches are given up first. A Yocto buil
 again; with a long write-back window they often never reach the disk, and the file metadata stays cached. `kit/sysctl/90-agl-ci-cache.conf` (six
 `vm.*` settings, each explained in the file) does this. The numbers are from the kernel documentation (the dirty ratios are percentages of
 *available* memory, free plus reclaimable, not of total memory; `vm.vfs_cache_pressure = 0` is avoided on purpose, the kernel documents out-of-memory
-conditions for it). Apply it by hand, on a **build node**, as root; `deploy.sh` does not do it because it changes the whole machine:
+conditions for it). `deploy.sh` does not apply it because it changes the whole machine. On a **build node**, either give
+`NODE_TUNING=1` to the role script (chapter 20; later runs keep the file current), or apply it by hand, as root:
 ```
 sysctl -a 2>/dev/null | grep -E '^vm\.(swappiness|vfs_cache_pressure|dirty_)' > ~/sysctl-before.txt     # the old values, for the way back
 sudo install -m 0644 kit/sysctl/90-agl-ci-cache.conf /etc/sysctl.d/
@@ -150,7 +136,7 @@ sysctl vm.swappiness vm.vfs_cache_pressure vm.dirty_background_ratio vm.dirty_ra
 The last command must print the new values (1, 25, 40, 80, 30000, 3000). Things to know:
 - Data written **without `fsync`** can be lost on a crash or power failure, up to the 5 minutes of the window. Build output and sstate objects can be
   rebuilt; data that a program flushes with `fsync` is not affected.
-- **Not on the cache host** (the machine whose `CACHE_DIR` is the mirror, or that holds the hash database): there the data is the source of truth.
+- **Not on the cache host** (no script checks this for you; the machine whose `CACHE_DIR` is the mirror, or that holds the hash database): there the data is the source of truth.
   On today's single trusted host both roles share the machine, so decide there; with separate roles only the builders get the file.
 - When the dirty limit is reached, writers wait until the disk has caught up: seconds on NVMe, minutes on spinning disks.
 - A container's memory limit (`MEM_LIMIT_SIDECAR`, "Limits") counts the cache it uses; leave room above what the build itself needs.
@@ -222,7 +208,10 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 | Loop script and unit (root-owned snapshot of a reviewed commit) | `/opt/agl-runner/run-loop.sh`, `/etc/systemd/system/agl-runner@.service` |
 | Slot N | systemd `agl-runner@N`; containers `agl-rN` (runner) and `agl-dN` (DinD sidecar), network `agl-nN`, volume `agl-wN` (workspace, removed after every job) |
 | Cache | `CACHE_DIR` (default `/srv/agl-cache`, `root:root 0700`): `sstate/`, `dl/` (owner uid 1001, the runner user inside the image) |
-| Mirror web server (trusted host) | container `agl-mirror`, files in `kit/mirror/` |
+| Mirror web server (download server) | container `agl-mirror`, files in `kit/mirror/` |
+| Cron | trusted builder: `/etc/cron.d/agl-builder` (`kit/builder.cron`); download server: `/etc/cron.d/agl-server` (`kit/server.cron`) |
+| rsync daemon (trusted builder) | container `agl-rsyncd` (`kit/mirror/rsyncd.sh`); its addresses are stored only in the container |
+| Sysbox (when used) | package `sysbox-ce`, services `sysbox`, `sysbox-mgr`, `sysbox-fs`; runtime in `/etc/docker/daemon.json`, old file `daemon.json.agl-before-sysbox` |
 | Logs | `journalctl -fu agl-runner@N`; `docker logs agl-mirror` |
 
 ### Host roles
@@ -234,6 +223,8 @@ is needed once per host (and after a complete re-setup); later `kit/update.sh` r
 They are different physical machines. Never put both roles on one host.
 
 ### First setup
+Shortest way: the script of the role (chapter 20, "The three roles"). The same with the parts of the kit:
+
 Trusted host (the existing one already is):
 1. `sudo SLOTS=2 ./kit/deploy.sh <token-file>`. It verifies the token, installs Docker if missing, verifies the pinned runner
    image with `cosign`, writes the config, creates `CACHE_DIR`, starts the slots.
@@ -266,6 +257,8 @@ straight from the checkout, which makes every `git pull` an instant root-code ch
 ### Daily use
 | Task | Command |
 |---|---|
+| Look at a host without changing it | `sudo kit/<role script> --check` (chapter 20) |
+| Update, restarting idle slots only | `sudo kit/<role script> --run` |
 | Update the host to the current `main` | `./kit/update.sh` (git pull, deploy, restart all slots; token, `POOL`, `MIRROR_URL`, `CACHE_DIR`, `SLOTS` and limits are kept; a host from before this change gets 2 slots; give a variable to change it, a token file argument replaces the stored token) |
 | Change the number of slots | `SLOTS=3 ./kit/update.sh` (surplus slots are disabled); lint slots: `LINT_SLOTS=0 ./kit/update.sh` removes them, `LINT_SLOTS=2` adds one |
 | New runner image | merge the digest into `kit/runner.digest`, then `./kit/update.sh` |
@@ -296,7 +289,8 @@ A restart kills the job in progress (the first pilot build died this way). Check
 4. **Cold cache** (trusted host: this also empties the mirror and the hash equivalence database, which lives in `sstate/`).
    Stop the slots, `sudo rm -rf $CACHE_DIR/sstate/* $CACHE_DIR/dl/*`, start the slots. Refill: run the caller with
    `mode: fetch`, `tier: dispatch`, then a build or the next nightly. Untrusted host: the same, and nothing else depends on it.
-5. **Re-setup the host from scratch** (new OS, broken state). `runner.env` is deleted here, so `POOL` and `MIRROR_URL`
+5. **Re-setup the host from scratch** (new OS, broken state). After the removal below, the role script (chapter 20) can replace
+   the last command. `runner.env` is deleted here, so `POOL` and `MIRROR_URL`
    must be given again:
    ```
    sudo systemctl disable --now 'agl-runner@*'
@@ -323,6 +317,7 @@ A restart kills the job in progress (the first pilot build died this way). Check
 | Runner offline entries pile up | crashes | reset 3 |
 | `Permission denied` for your own account on `/srv/agl-cache` | intended: the folder is `root:root 0700` | use `sudo` |
 | `df` full | cache or Docker data | cache size 50-150 GB; `docker system df`; reset 2 and 4 |
+| `sysbox: ...` or `STOPPED: ...` | the Sysbox installation or a host script refused | chapter 20, "Refusals and failures" |
 | Offline drill finds misses | cache cold or never fetched | chapter 15: fetch mode, then drill |
 
 ## Failure behaviour (run-loop.sh)
@@ -417,8 +412,8 @@ Without the cgroup remount the dind entrypoint stops with `mkdir: can't create d
 **Conclusion.** Plain capabilities do not make a boundary as long as nested containers need a bridge network: the bridge needs a writable `/proc/sys`, and
 a writable `/proc/sys` hands the host a root route. Not tested: AppArmor on Debian 13, a real kas build in the narrowed sidecar, the cache bind mounts, the
 outer engine of the build hosts. Candidates, in order of effort: (1) variant C on a real host (an untrusted host, with a fork test pull request), which also
-needs `--runtime-args --network=host` for kas-container; (2) Sysbox, which virtualises `/proc/sys` (community-maintained; `/dev/kvm`, a Debian 13 package and
-the uid mapping of the cache are unconfirmed); (3) one VM per slot, the only real boundary and the most work.
+needs `--runtime-args --network=host` for kas-container; (2) Sysbox, which virtualises `/proc/sys` (community-maintained; since 2026-11-27 an option of the kit,
+see "Sysbox sidecar"); (3) one VM per slot, the only real boundary and the most work.
 
 **`/dev/kvm`.** Until 2026-11-27 `run-loop.sh` passed it to the sidecar and the runner, meant for QEMU boot tests. The build matrix
 and the scripts contain no boot test (`testimage`, `runqemu`), so the kit passes it to no container any more. A privileged
@@ -462,7 +457,8 @@ removes the old package first (`apt-get purge sysbox-ce`, slots stopped).
 **Acceptance on a new host, before the slots use it:** nested containers on the inner bridge reach the network; the host disk is
 not readable and `core_pattern` of the host cannot be changed, also from a nested `--privileged` container; runner (uid 1001) and
 sidecar both write the workspace volume; the cache keeps its owners, also for the `--user 0` collect step; a user plus network
-namespace works in a nested builder container (bitbake); a real image build passes.
+namespace works in a nested builder container (bitbake); a real image build passes. The order of the rollout, the checks as a
+table and the way back: chapter 20, "Sysbox on a build host".
 
 ## Open points
 Necessity of `seccomp=unconfined` on the runner container (bitbake runs in the nested container, not in the runner container; untested); Podman path untested. (The old bare-host test runner
