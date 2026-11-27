@@ -79,7 +79,7 @@ one release land on whatever host has a free slot; nothing in the workflow depen
 
 ## 5 The download server [rehearsed]
 
-`kit/release/run.sh`, called from `/etc/cron.d/agl-release` every five minutes (`flock`; log `/var/log/agl-release.log`; settings
+`kit/release/run.sh`, called from `/etc/cron.d/agl-server` (`kit/server.cron`) every five minutes (`flock`; log `/var/log/agl-release.log`; settings
 `/etc/agl-release/promote.env`, see `kit/release/promote.env.example`):
 
 1. `kit/mirror/pull-sync.sh` with `AREAS=staging` and `SOURCES` = the rsync daemon of **every build host** (`BUILD_RSYNC`, space separated). The
@@ -167,8 +167,8 @@ one VM per release build, and a read-only verified cache with a reproducible-bui
 
 ## 10 Setting up a download server (checklist)
 
-`sudo kit/download-server-install-host.sh --run` does the steps below except the release keys and the repository settings (chapter 05,
-"Host scripts"; not run on a real host yet).
+`sudo kit/download-server-install-host.sh --run` does the steps below except the release keys, the rsync daemons on the build hosts
+and the repository settings (chapter 20; not run on a real host yet).
 
 0. The tree of the server is `/srv/agl-permanent` (`RELEASE_ROOT` and `MIRROR_ROOT`): published, permanent data (`dl`, `sstate`, `git`, `release`, `staging`,
    `nightly`). It is not the cache of a builder (`/srv/agl-cache`, `CACHE_DIR`), which is working storage that can be rebuilt; the two are different directories, and
