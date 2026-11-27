@@ -179,6 +179,7 @@ else
 fi
 
 # --- only reported
+checkout_note
 keys="$(setting RELEASE_KEYS_DIR "")"; if [ -n "$keys" ]; then keys="$R$keys"; else keys="$repo/keys/release"; fi
 [ -n "$(find "$keys" -type f ! -name .gitkeep -print -quit 2>/dev/null)" ] || todo "no release engineer keys in the keys directory of promote.env (chapter 19)"
 hs="$(docker ps -a --format '{{.Names}} {{.Image}}' | awk '$2 ~ /prhashserv/ {print $1}')"

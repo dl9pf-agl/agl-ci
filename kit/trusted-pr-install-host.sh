@@ -43,6 +43,7 @@ cron_dst="$R/etc/cron.d/agl-builder"
 have_cron() { same_file <(cron_text builder.cron) "$cron_dst"; }
 make_cron() { install -d -m 0755 "$(dirname "$cron_dst")"; cron_text builder.cron > "$cron_dst"; chmod 0644 "$cron_dst"; }
 step "builder cron (/etc/cron.d/agl-builder)" cron
+checkout_note
 
 # --- the rsync daemon: its settings come from the environment or from the running container (they are in no file)
 rs() { docker inspect agl-rsyncd --format "$1" 2>/dev/null || true; }
