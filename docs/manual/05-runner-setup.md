@@ -31,7 +31,7 @@ Done once per organisation. The commands on the host itself are in the Runbook b
    verified by `scripts/verify-release.sh`).
 4. On the host: `git clone` this repo, `cd kit && sudo ./deploy.sh /path/to/token-file`.
    Options (env): `GH_ORG`, `SLOTS`, `ENGINE`, `LABELS` (default by pool: `agl-pr` or `agl-fork`; `agl-kvm` reserved for jobs that need KVM; the kit passes no `/dev/kvm` today), `MEM_LIMIT_RUNNER`,
-   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `SIDECAR_RUNTIME` (see "Sysbox sidecar"), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
+   `CPU_LIMIT_RUNNER`, `MEM_LIMIT_SIDECAR`, `CPU_LIMIT_SIDECAR` (see "Limits of a slot"), `DIND=0|1` (default 1), `SIDECAR_RUNTIME` (installs Sysbox if needed, see "Sysbox sidecar"), `RUNNER_DIGEST`, `LINT_SLOTS` (default 1, see "Lint slots"), and for the pool `POOL`, `MIRROR_URL`, `GIT_MIRROR=1` (see "Pools").
 5. Check: org Settings > Actions > Runners shows an idle runner; run `runner-smoke.yml`; logs
    `journalctl -fu agl-runner@1`. Stop: `systemctl disable --now agl-runner@1`.
 
@@ -408,15 +408,23 @@ Root in the sidecar is then an unprivileged user on the host, and `/proc/sys` is
 change. **Not tried on a build host yet** (2026-11-27): what is said here about Sysbox itself comes from its documentation and
 issue tracker.
 
-**Install first, then switch.** `deploy.sh` refuses the setting while Docker does not list the runtime, and never falls back to
-the privileged sidecar by itself.
-1. Wait until the host is idle, stop the slots. The Sysbox install guide asks to remove **all** containers first (a mirror web
-   server or `agl-rsyncd` must be started again afterwards).
-2. The installer edits `/etc/docker/daemon.json` and may restart Docker; it does not need to when `bip` and
-   `default-address-pools` are set there. Set them to the current values first, keep a copy of the file, and check the firewall
-   (IPv4 and IPv6) afterwards.
-3. Install the `sysbox-ce` package, checked against the sha256 of its release page.
-4. `SIDECAR_RUNTIME=sysbox-runc ./kit/update.sh`.
+**One command.** `SIDECAR_RUNTIME=sysbox-runc` on a deploy (a new host: `sudo SIDECAR_RUNTIME=sysbox-runc ./kit/deploy.sh
+<token-file>`; an existing one: `SIDECAR_RUNTIME=sysbox-runc ./kit/update.sh`) runs `kit/sysbox.sh`: it installs the package
+pinned in `docker/pins.env` where the runtime is missing, then checks it. A failure stops the deploy; there is no fallback to the
+privileged sidecar. **To look first and switch later**, run `sudo kit/sysbox.sh` alone: the slots keep their setting.
+
+**What the installation does** (read from the package scripts of 0.7.2, tested against stubs only):
+- `daemon.json` gets `bip` (the address `docker0` has now) and Docker's own default address pools where they are missing, so the
+  package needs **no Docker restart and no container removal** (its install guide asks for both); it adds the runtime and sends
+  Docker a `SIGHUP`. The old file is kept as `daemon.json.agl-before-sysbox`.
+- It adds a user `sysbox`, the packages it depends on (`fuse`, `rsync`, ...) and raises kernel limits
+  (`/lib/sysctl.d/99-sysbox-sysctl.conf`: inotify, keyring, `pid_max`).
+- The script refuses while a job runs, when apt would remove or upgrade a package, and on other architectures than amd64; after
+  the installation it stops if containers, networks, firewall rules or listening ports differ from before.
+- Debian 13 passes the package's own check (an unlisted distribution needs kernel 5.5 or newer).
+
+**Update:** change both pins in `docker/pins.env`; `kit/sysbox.sh` installs only where the runtime is missing, so an upgrade
+removes the old package first (`apt-get purge sysbox-ce`, slots stopped).
 
 **Go back:** `SIDECAR_RUNTIME= ./kit/update.sh` (the empty value counts). The installed package can stay.
 

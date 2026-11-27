@@ -18,7 +18,7 @@
 #               HASHSERV_RW (trusted hosts) = host:port of the shared read-write hash server; HASHSERV_UPSTREAM (untrusted hosts) =
 #               host:port of the shared READ-ONLY one (agl-ci chapter 14). Both optional; an untrusted host never gets HASHSERV_RW.
 #               SIDECAR_RUNTIME (default empty = privileged sidecar) = sysbox-runc: the Docker sidecar runs under Sysbox, which
-#               must be installed first (agl-ci chapter 05). Kept by later deploys; SIDECAR_RUNTIME= (empty) goes back.
+#               is installed when missing (kit/sysbox.sh, agl-ci chapter 05). Kept by later deploys; SIDECAR_RUNTIME= (empty) goes back.
 #               POOL, MIRROR_URL, GIT_MIRROR and the two HASHSERV_* default to the previous deploy; a pool change needs FORCE_POOL_CHANGE=1.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo -E "$0" "$@"
@@ -66,23 +66,22 @@ fi
 command -v "$ENGINE" >/dev/null || { echo "$ENGINE not found" >&2; exit 1; }
 echo "engine: $ENGINE"
 
-# --- begin sidecar runtime check (kit/deploy_test.sh runs this block with a fake docker)
-# Refuse here what cannot work, before anything is written. There is no silent fallback to the privileged sidecar.
-case "$SIDECAR_RUNTIME" in
-  "") ;;
-  sysbox-runc)
-    [ "$ENGINE" = docker ] || { echo "SIDECAR_RUNTIME=sysbox-runc needs ENGINE=docker, not $ENGINE" >&2; exit 1; }
-    runtimes="$(docker info --format '{{range $name, $_ := .Runtimes}}{{println $name}}{{end}}')"
-    grep -qx sysbox-runc <<<"$runtimes" ||
-      { echo "Docker does not list the runtime sysbox-runc: install Sysbox first (agl-ci chapter 05)" >&2; exit 1; } ;;
-  *) echo "SIDECAR_RUNTIME must be empty or sysbox-runc, got: $SIDECAR_RUNTIME" >&2; exit 1 ;;
-esac
-# --- end sidecar runtime check
-
 # --- verify token can manage org runners before touching anything else
 code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_TOKEN" \
         -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/$ORG/actions/runners")"
 [ "$code" = 200 ] || { echo "token check failed (HTTP $code): needs org $ORG 'Self-hosted runners: read/write' (or admin:org)" >&2; exit 1; }
+
+# --- begin sidecar runtime (kit/deploy_test.sh runs this block with a fake sysbox.sh)
+# For sysbox-runc: install Sysbox where it is missing and check it (sysbox.sh), before the slot settings are written. If that
+# fails, the deploy stops: there is no silent fallback to the privileged sidecar.
+case "$SIDECAR_RUNTIME" in
+  "") ;;
+  sysbox-runc)
+    [ "$ENGINE" = docker ] || { echo "SIDECAR_RUNTIME=sysbox-runc needs ENGINE=docker, not $ENGINE" >&2; exit 1; }
+    "$here/sysbox.sh" ;;
+  *) echo "SIDECAR_RUNTIME must be empty or sysbox-runc, got: $SIDECAR_RUNTIME" >&2; exit 1 ;;
+esac
+# --- end sidecar runtime
 
 # --- config (token stays root-only on the host)
 # POOL and MIRROR_URL stay as deployed before unless given (LABELS too, while the pool stays the same)
