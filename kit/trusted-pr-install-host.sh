@@ -54,9 +54,14 @@ have_rsyncd() {
   areas="$(rs '{{range .Mounts}}{{println .Destination}}{{end}}')"
   for a in dl sstate staging nightly; do grep -qx "/srv/agl/$a" <<<"$areas" || return 1; done
   [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostIp}}{{end}}')" = "$rs_bind" ] || return 1
+  [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostPort}}{{end}}')" = "${rs_port:-873}" ] || return 1
   [ "$(rs '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^ALLOW=//p')" = "$rs_allow" ]
 }
 make_rsyncd() {
+  local old
+  old="$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostPort}}{{end}}')"
+  [ -z "$old" ] || [ "$old" = "${rs_port:-873}" ] ||
+    line note "rsync port $old becomes ${rs_port:-873}: change it in BUILD_RSYNC (/etc/agl-release/promote.env, download server)"
   RSYNCD_BIND="$rs_bind" RSYNCD_ALLOW="$rs_allow" RSYNCD_PORT="${rs_port:-873}" CACHE_DIR="$(cache_dir)" "$repo/kit/mirror/rsyncd.sh"
 }
 if [ -z "$rs_bind" ] || [ -z "$rs_allow" ]; then

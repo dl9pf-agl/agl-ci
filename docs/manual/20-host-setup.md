@@ -158,6 +158,9 @@ A script that stops prints `STOPPED: ...` (the host scripts) or `sysbox: ...`.
 | `slot N would be removed but runs a job` | smaller `SLOTS` or `LINT_SLOTS` | wait until the slot is idle |
 | `a trusted host uses HASHSERV_RW` / `an untrusted host never gets HASHSERV_RW` | wrong hash server setting | give the right one (chapter 14) |
 | `an rsync daemon runs here` | untrusted host offers its cache | remove the container `agl-rsyncd` after checking |
+| `the mirror uses the network ...` | `MIRROR_NETWORK` differs from the running mirror | leave the variable out, or follow the printed steps |
+| `the TLS file ... is not what the mirror serves` | `TLS_CERT` or `TLS_KEY` differ from the served copy | leave them out, or follow the printed steps |
+| `TLS_CERT and TLS_KEY must both be given and readable` | one is missing or unreadable | give both |
 | `sysbox: a job is running in agl-rN` | installation while a job runs | try again later |
 | `sysbox: apt would remove or upgrade packages` | installing needs more than new packages | look at the list; do not force it |
 | `sysbox: installation failed, daemon.json restored` | the package install failed | read the apt output above |
@@ -171,9 +174,15 @@ tokens and organisation settings, runner registrations, the cache contents. Kern
 chapter 18 ("Host CVE watch").
 
 ## 8 Settings
-**Not detected:** a new `RSYNCD_PORT`, mirror `PORT`, `MIRROR_NETWORK` or `TLS_CERT` alone does not make a container count as
-out of date. These apply when the container is created again for another reason; to apply one at once, call `rsyncd.sh` or
-`mirror/run.sh` with it (chapter 15).
+**A changed port** (`RSYNCD_PORT`, mirror `PORT` or `TLS_PORT`) makes the container count as out of date; `--run` creates it again
+and prints where the old port is still written: `BUILD_RSYNC` in `promote.env` on the download server, `ufw`, `MIRROR_URL` in
+`runner.env` of the build hosts.
+
+**The mirror's network and TLS files are never changed by the script.** A `MIRROR_NETWORK`, `TLS_CERT` or `TLS_KEY` that differs
+from the running mirror stops it before any change, in `--check` and `--run`, and prints the commands to do it by hand. A
+certificate that is renewed in place is noticed only when `TLS_CERT` and `TLS_KEY` are given; `mirror/certbot.sh renew`
+restarts the mirror itself (chapter 15); on a download server give it `MIRROR_ROOT`, or the restarted mirror serves the
+cache directory of a builder.
 
 Build hosts keep them in `/etc/agl-runner/runner.env` (root only; never print it, it holds the token). A variable that is not
 given keeps the stored value. All variables and defaults: the header of `kit/deploy.sh`; the limits: chapter 05.
