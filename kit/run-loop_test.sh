@@ -29,8 +29,8 @@ expect "the pool sidecar limits do not leak into a lint slot"     "agl-lint 4g/2
 expect "lint slot limits given"                                   "agl-lint 1g/1 [--memory 3g --cpus 1] [] [] [] []"  3 2 LINT_MEM_LIMIT_RUNNER=1g LINT_CPU_LIMIT_RUNNER=1 LINT_MEM_LIMIT_SIDECAR=3g LINT_CPU_LIMIT_SIDECAR=1
 expect "old lint names LINT_MEM_LIMIT / LINT_CPU_LIMIT still bound the lint runner" "agl-lint 8g/4 [--memory 2g --cpus 2] [] [] [] []"  3 2 LINT_MEM_LIMIT=8g LINT_CPU_LIMIT=4
 # the options must really reach the two docker run calls: the sidecar gets sc_limits, the runner container gets the RUNNER limits
-grep -qF '"agl-d$slot" --network "agl-n$slot" "${dev[@]}" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the sidecar limits" || { echo "FAIL  the sidecar docker run does not use sc_limits"; fail=1; }
+grep -qF '"agl-d$slot" --network "agl-n$slot" "${sc_limits[@]}"' "$f" && echo "ok    the sidecar docker run gets the sidecar limits" || { echo "FAIL  the sidecar docker run does not use sc_limits"; fail=1; }
 grep -qF -- '--memory "$MEM_LIMIT_RUNNER" --cpus "$CPU_LIMIT_RUNNER"' "$f" && echo "ok    the runner docker run gets the runner limits" || { echo "FAIL  the runner docker run does not use the RUNNER limits"; fail=1; }
-grep -qF '"${dev[@]}" "${kvm_group[@]}" --security-opt seccomp=unconfined' "$f" && echo "ok    the runner docker run gets the group of /dev/kvm" || { echo "FAIL  the runner docker run does not get kvm_group" >&2; fail=1; }
+grep -v '^ *#' "$f" | grep -qE -- '/dev/kvm|--device' && { echo "FAIL  run-loop.sh passes a device (/dev/kvm) to a container" >&2; fail=1; } || echo "ok    no container gets /dev/kvm"
 grep -qF -- '-e AGL_GIT_MIRROR=1' "$f" && echo "ok    GIT_MIRROR=1 reaches the job as AGL_GIT_MIRROR" || { echo "FAIL  run-loop.sh does not pass AGL_GIT_MIRROR" >&2; fail=1; }
 exit "$fail"
