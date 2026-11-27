@@ -16,6 +16,8 @@
 #   3. the published tree, promote.env, the clones of agl-ucb and the layer repositories
 #   4. the cron file (it replaces the three files of an older install, which are moved aside) and the mirror web server
 #   5. report what a person has to look at: release keys, hash server, firewall. These are never changed here
+# A new PORT or TLS_PORT recreates the mirror. A MIRROR_NETWORK, TLS_CERT or TLS_KEY that differs from the running mirror
+# stops the script before it changes anything and says what to do by hand.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=host-lib.sh
 . "$(dirname "$(readlink -f "$0")")/host-lib.sh"
@@ -28,6 +30,40 @@ if [ -n "$(systemctl list-units --state=active --plain --no-legend 'agl-runner@*
   die "runner slots are active here: a download server runs no jobs (systemctl disable --now them first)"
 fi
 [ ! -f "$R/etc/cron.d/agl-builder" ] || die "/etc/cron.d/agl-builder is installed: it prunes staged releases that wait for a signature"
+
+# --- the mirror's network and TLS files are not changed by this script: a wrong value takes the public mirror off the net.
+# A given value that differs from what the running mirror has stops the script here, before anything is changed.
+mi() { docker inspect agl-mirror --format "$1" 2>/dev/null || true; }
+net_name() { case "$1" in default|bridge) echo "" ;; *) echo "$1" ;; esac; }   # empty: Docker's bridge with a published port
+guard_mirror() {
+  local have want tls pair given copy root port env run
+  have="$(mi '{{.HostConfig.NetworkMode}}')"
+  [ -n "$have" ] || return 0   # no mirror yet: the given values are simply used
+  # the printed commands carry the values of this host: without MIRROR_ROOT, run.sh would serve the builder's cache directory
+  root="$(sed -n 's/^export RELEASE_ROOT=\([^ #]*\).*/\1/p' "$R/etc/agl-release/promote.env" 2>/dev/null)"
+  port="$(mi '{{range index .HostConfig.PortBindings "8080/tcp"}}{{.HostPort}}{{end}}')"
+  env="MIRROR_ROOT=${root:-/srv/agl-permanent} PORT=${port:-8080}"; run="$env $repo/kit/mirror/run.sh"
+  if [ -n "${MIRROR_NETWORK+x}" ]; then
+    want="$(net_name "$MIRROR_NETWORK")"; have="$(net_name "$have")"
+    [ "$want" = "$have" ] || die "the mirror uses the network '${have:-bridge}', MIRROR_NETWORK asks for '${want:-bridge}'.
+  Not changed here. To keep it: run without MIRROR_NETWORK. To change it, on this host:
+    1. MIRROR_NETWORK=$want $run    (with TLS_CERT and TLS_KEY when it serves TLS)
+    2. check ufw and the published ports, IPv4 and IPv6 (host networking listens on 8080 and 8443)
+    3. if the address or port of the mirror changes: MIRROR_URL in /etc/agl-runner/runner.env of the build hosts"
+  fi
+  [ -n "${TLS_CERT:-}${TLS_KEY:-}" ] || return 0
+  [ -r "${TLS_CERT:-}" ] && [ -r "${TLS_KEY:-}" ] || die "TLS_CERT and TLS_KEY must both be given and readable"
+  tls="$R/etc/agl-runner/mirror-tls"   # the copy kit/mirror/run.sh made for the container
+  for pair in "$TLS_CERT:fullchain.pem" "$TLS_KEY:privkey.pem"; do
+    given="${pair%:*}"; copy="$tls/${pair##*:}"
+    cmp -s "$given" "$copy" || die "the TLS file $given is not what the mirror serves (its copy: $copy).
+  Not changed here. To keep the served one: run without TLS_CERT and TLS_KEY. To change it, on this host:
+    1. TLS_CERT=$TLS_CERT TLS_KEY=$TLS_KEY $run
+    2. with Let's Encrypt instead: $env TLS_NAME=<dns name> $repo/kit/mirror/certbot.sh renew (restarts the mirror itself)
+    3. add the same renewal to cron if the files are renewed by something else (chapter 15)"
+  done
+}
+guard_mirror
 step "packages" packages
 docker_step
 step "SCTP module blocked" sctp
@@ -93,7 +129,7 @@ else
 fi
 
 # --- the mirror web server
-mi() { docker inspect agl-mirror --format "$1" 2>/dev/null || true; }
+port_of() { mi "{{range index .HostConfig.PortBindings \"$1/tcp\"}}{{.HostPort}}{{end}}"; }   # published port of $1, if any
 # shellcheck disable=SC2016  # the text of run.sh is searched, nothing is to expand here
 mirror_image="$(sed -n 's/^IMAGE="${MIRROR_IMAGE:-\(.*\)}"$/\1/p' "$repo/kit/mirror/run.sh")"
 mounts="$(mi '{{range .Mounts}}{{println .Destination}}{{end}}')"
@@ -105,13 +141,22 @@ have_mirror() {
     docker exec agl-mirror cat "${pair#*:}" 2>/dev/null | cmp -s - "$repo/kit/mirror/${pair%%:*}" || return 1
   done
   now="$(mi '{{range .Mounts}}{{println .Destination}}{{end}}')"
+  # a given port that is not the published one (with host networking nothing is published and the ports are fixed)
+  if [ "$(mi '{{.HostConfig.NetworkMode}}')" != host ]; then
+    [ -z "${PORT:-}" ] || [ "$(port_of 8080)" = "$PORT" ] || return 1
+    [ -z "${TLS_PORT:-}" ] || ! grep -qx /etc/nginx/mirror/tls/server.conf <<<"$now" || [ "$(port_of 8443)" = "$TLS_PORT" ] || return 1
+  fi
   for d in dl sstate git staging release nightly; do grep -qx "/srv/mirror/$d" <<<"$now" || return 1; done
 }
 make_mirror() {
-  local port net
-  port="${PORT:-$(mi '{{range index .HostConfig.PortBindings "8080/tcp"}}{{.HostPort}}{{end}}')}"
+  local port tls_port net old old_tls
+  old="$(port_of 8080)"; old_tls="$(port_of 8443)"
+  port="${PORT:-$old}"; tls_port="${TLS_PORT:-$old_tls}"
   net="${MIRROR_NETWORK:-}"; [ -n "$net" ] || [ "$(mi '{{.HostConfig.NetworkMode}}')" != host ] || net=host
-  MIRROR_ROOT="$tree" PORT="${port:-8080}" MIRROR_NETWORK="$net" "$repo/kit/mirror/run.sh"
+  if { [ -n "$old" ] && [ "$old" != "$port" ]; } || { [ -n "$old_tls" ] && [ "$old_tls" != "$tls_port" ]; }; then
+    line note "a mirror port changes: change ufw on this host and MIRROR_URL in /etc/agl-runner/runner.env of the build hosts"
+  fi
+  MIRROR_ROOT="$tree" PORT="${port:-8080}" TLS_PORT="${tls_port:-8443}" MIRROR_NETWORK="$net" "$repo/kit/mirror/run.sh"
 }
 if grep -qx /etc/nginx/mirror/tls/server.conf <<<"$mounts" && [ -z "${TLS_CERT:-}" ] && ! have_mirror; then
   todo "the mirror serves TLS and is not current: run again with TLS_CERT and TLS_KEY (kit/mirror/certbot.sh); left as it is"

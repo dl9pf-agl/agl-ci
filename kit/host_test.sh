@@ -41,7 +41,7 @@ printf '/srv/agl/%s\n' dl sstate staging nightly > "$c/mounts"; mkdir -p "$c/fil
 EOS
 { echo '#!/bin/bash'; echo "$mirror_image_line"; cat <<'EOS'; } > "$repo/kit/mirror/run.sh"
 echo "mirror PORT=$PORT" >> "$AGL_ROOT/calls"; c="$AGL_ROOT/ctr/agl-mirror"; here="$(dirname "$0")"; mkdir -p "$c/files/etc/nginx/mirror" "$c/files/srv/mirror"
-echo true > "$c/running"; echo "$IMAGE" > "$c/image"; echo "$PORT" > "$c/port"
+echo true > "$c/running"; echo "$IMAGE" > "$c/image"; echo "$PORT" > "$c/port"; echo "$TLS_PORT" > "$c/tlsport"; echo "${MIRROR_NETWORK:-bridge}" > "$c/net"
 cp "$here/nginx.conf" "$c/files/etc/nginx/"; cp "$here/locations.conf" "$c/files/etc/nginx/mirror/"; cp "$here/index.html" "$c/files/srv/mirror/"
 printf '/srv/mirror/%s\n' dl sstate git staging release nightly > "$c/mounts"
 EOS
@@ -78,7 +78,8 @@ case "${0##*/}" in
         case "$f" in
           *Running*RestartPolicy*) echo "$(cat "$c/running") unless-stopped" ;;
           *Running*) cat "$c/running" ;; *Config.Image*) cat "$c/image" ;; *HostIp*) cat "$c/bind" 2>/dev/null ;;
-          *HostPort*) cat "$c/port" 2>/dev/null ;; *Config.Env*) cat "$c/env" ;; *Destination*) cat "$c/mounts" ;; *NetworkMode*) echo bridge ;;
+          *8443*HostPort*) ! grep -q tls "$c/mounts" || cat "$c/tlsport" ;; *HostPort*) cat "$c/port" 2>/dev/null ;;
+          *Config.Env*) cat "$c/env" ;; *Destination*) cat "$c/mounts" ;; *NetworkMode*) cat "$c/net" 2>/dev/null || echo bridge ;;
         esac ;;
     esac ;;
 esac
@@ -123,6 +124,9 @@ check "a second run changes nothing"                       "$(wc -l < "$h/calls"
 check "rsync settings start the daemon"                    "$(run trusted-pr RSYNCD_BIND=10.9.0.2 RSYNCD_ALLOW=10.9.0.1) $(count rsyncd)" "0 1"
 : > "$h/calls"
 check "the daemon is current without the settings again"   "$(run trusted-pr) $(wc -l < "$h/calls")" "0 0"
+check "a changed rsync port recreates the daemon"          "$(run trusted-pr RSYNCD_PORT=8730) $(count rsyncd) $(said 'BUILD_RSYNC')" "0 1 yes"
+check "the new port is current without the setting"        "$(run trusted-pr) $(count rsyncd)" "0 1"
+: > "$h/calls"
 check "an address on no interface leaves the daemon"       "$(run trusted-pr RSYNCD_BIND=10.9.9.9) $(count rsyncd) $(said 'tunnel up')" "0 0 yes"
 for i in 1 2; do echo 1 > "$h/units/agl-runner@$i.service"; done; : > "$h/calls"
 check "a changed setting: busy slot pending, idle restarted" "$(run trusted-pr MIRROR_URL=http://m:8080 BUSY=agl-r1)" 3
@@ -163,8 +167,26 @@ check "old cron files are moved aside, not deleted"        "$(ls "$h"/var/backup
 check "a second run changes nothing"                       "$(run download-server) $(wc -l < "$h/calls")" "0 0"
 echo old > "$h/ctr/agl-mirror/files/etc/nginx/nginx.conf"
 check "a changed web server config recreates the mirror"   "$(run download-server) $(count '^mirror')" "0 1"
-echo old > "$h/ctr/agl-mirror/files/etc/nginx/nginx.conf"; echo /etc/nginx/mirror/tls/server.conf >> "$h/ctr/agl-mirror/mounts"; : > "$h/calls"
+check "the same port or network changes nothing"           "$(run download-server PORT=8080 MIRROR_NETWORK=) $(count '^mirror')" "0 1"
+: > "$h/calls"
+check "a new mirror port: --check says differs"            "$(run download-server PORT=9090 --check) $(count '^mirror')" "3 0"
+check "a new mirror port recreates the mirror"             "$(run download-server PORT=9090) $(count '^mirror PORT=9090') $(said 'MIRROR_URL')" "0 1 yes"
+check "the new port is current without the setting"        "$(run download-server) $(count '^mirror')" "0 1"
+rm "$h/etc/cron.d/agl-server"; : > "$h/calls"
+check "another network stops before any change"            "$(run download-server MIRROR_NETWORK=host) $(wc -l < "$h/calls") $([ -f "$h/etc/cron.d/agl-server" ] && echo cron || echo nocron)" "1 0 nocron"
+check "the network message says what to change"            "$(said 'MIRROR_NETWORK=host MIRROR_ROOT=/srv/agl-permanent PORT=9090 ') $(said 'MIRROR_URL')" "yes yes"
+check "--check stops there too"                            "$(run download-server MIRROR_NETWORK=host --check)" 1
+mkdir -p "$h/etc/agl-runner/mirror-tls"; echo cert1 > "$h/etc/agl-runner/mirror-tls/fullchain.pem"; echo key1 > "$h/etc/agl-runner/mirror-tls/privkey.pem"
+echo cert2 > "$h/new.crt"; echo key1 > "$h/new.key"
+check "another TLS certificate stops before any change"    "$(run download-server TLS_CERT="$h/new.crt" TLS_KEY="$h/new.key") $(wc -l < "$h/calls") $(said 'mirror/run.sh')" "1 0 yes"
+echo cert1 > "$h/new.crt"; echo key2 > "$h/new.key"
+check "another TLS key stops, and its content is not shown" "$(run download-server TLS_CERT="$h/new.crt" TLS_KEY="$h/new.key") $(said 'privkey.pem') $(said key2)" "1 yes no"
+check "one TLS file alone is refused"                      "$(run download-server TLS_CERT="$h/new.crt")" 1
+echo key1 > "$h/new.key"
+check "the served TLS files are accepted"                  "$(run download-server TLS_CERT="$h/new.crt" TLS_KEY="$h/new.key")" 0
+echo old > "$h/ctr/agl-mirror/files/etc/nginx/nginx.conf"; echo /etc/nginx/mirror/tls/server.conf >> "$h/ctr/agl-mirror/mounts"; echo 9443 > "$h/ctr/agl-mirror/tlsport"; : > "$h/calls"
 check "a TLS mirror is not recreated without certificate"  "$(run download-server) $(count '^mirror') $(said 'serves TLS')" "0 0 yes"
+check "with the served files it is, and keeps its TLS port" "$(run download-server TLS_CERT="$h/new.crt" TLS_KEY="$h/new.key") $(cat "$h/ctr/agl-mirror/tlsport")" "0 9443"
 touch "$h/etc/cron.d/agl-builder"
 check "a builder cron is refused"                          "$(run download-server)" 1
 exit "$fail"
