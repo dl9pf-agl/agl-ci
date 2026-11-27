@@ -23,13 +23,29 @@ die()  { echo "STOPPED: $*" >&2; exit 1; }
 line() { printf '%-8s %s\n' "$1" "$2"; }
 todo() { line TODO "$1"; todos=$((todos + 1)); }
 
+# A have_ function that returns false says why in $why (one or more lines; never a value of runner.env, it holds secrets).
+why=""
+show_why() { local indent='           '; [ -z "$why" ] || printf '%s%s\n' "$indent" "${why//$'\n'/$'\n'$indent}"; }
+
+# same_file <wanted file> <installed file>: false, with the difference in $why, when the two are not the same
+same_file() {
+  [ -f "$2" ] || { why="missing: ${2#"$R"}"; return 1; }
+  why="$(diff "$1" "$2")" && return 0
+  why="${2#"$R"} (< kit, > this host):
+$(head -n 20 <<<"$why")"
+  return 1
+}
+
 # step "<what>" <name>
 step() {
+  why=""
   if "have_$2"; then line ok "$1"
-  elif [ "$check_only" = 1 ]; then line differs "$1"; differ=$((differ + 1))
+  elif [ "$check_only" = 1 ]; then line differs "$1"; show_why; differ=$((differ + 1))
   else
+    show_why
     "make_$2"
-    "have_$2" || die "$1: still not current after the change"
+    why=""
+    "have_$2" || { show_why; die "$1: still not current after the change"; }
     line changed "$1"; changed=$((changed + 1))
   fi
 }
@@ -88,7 +104,9 @@ update_checkout() {
 # --- packages, Docker, kernel settings
 have_packages() {
   local p
-  for p in $PACKAGES; do [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] || return 1; done
+  for p in $PACKAGES; do
+    [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] || { why="not installed: $p"; return 1; }
+  done
 }
 make_packages() {
   apt-get update -qq
@@ -112,7 +130,7 @@ have_sctp() { grep -qx 'install sctp /bin/false' "$(sctp_conf)" 2>/dev/null; }
 make_sctp() { install -d -m 0755 "$(dirname "$(sctp_conf)")"; echo 'install sctp /bin/false' > "$(sctp_conf)"; }
 
 tuning_dst() { echo "$R/etc/sysctl.d/90-agl-ci-cache.conf"; }
-have_tuning() { cmp -s "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; }
+have_tuning() { same_file "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; }
 make_tuning() { install -D -m 0644 "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; sysctl --system >/dev/null; }
 # Build node tuning changes the whole machine: only when asked once (NODE_TUNING=1), then kept current (chapter 05).
 tuning_step() { if [ "${NODE_TUNING:-}" = 1 ] || [ -f "$(tuning_dst)" ]; then step "build node tuning (sysctl)" tuning; fi; }
@@ -154,8 +172,9 @@ guard_build_host() {   # $1 = trusted | untrusted
 
 have_sysbox() {
   local r s
-  r="$(docker info --format '{{range $n, $_ := .Runtimes}}{{println $n}}{{end}}')" && grep -qx sysbox-runc <<<"$r" || return 1
-  for s in sysbox-mgr sysbox-fs sysbox; do systemctl is-active --quiet "$s" || return 1; done
+  r="$(docker info --format '{{range $n, $_ := .Runtimes}}{{println $n}}{{end}}')" || r=""
+  grep -qx sysbox-runc <<<"$r" || { why="Docker does not list the runtime sysbox-runc"; return 1; }
+  for s in sysbox-mgr sysbox-fs sysbox; do systemctl is-active --quiet "$s" || { why="service $s is not active"; return 1; }; done
 }
 make_sysbox() { "$repo/kit/sysbox.sh"; }
 
@@ -166,19 +185,23 @@ slot_numbers() {
 
 # The installed runner kit equals this checkout, and every setting given in the environment is the stored one.
 have_runners() {
-  local k i
-  [ -f "$(envfile)" ] || return 1
-  cmp -s "$repo/kit/run-loop.sh" "$R/opt/agl-runner/run-loop.sh" || return 1
-  cmp -s "$repo/kit/agl-runner@.service" "$R/etc/systemd/system/agl-runner@.service" || return 1
-  [[ "$(stored RUNNER_IMAGE)" == *"@$(tr -d '[:space:]' < "$repo/kit/runner.digest")" ]] || return 1
-  [ "$(stored DIND_IMAGE)" = "$DIND_IMAGE" ] || return 1
-  [ "$(stored POOL)" = "$pool" ] || return 1
+  local k i f
+  [ -f "$(envfile)" ] || { why="no runner settings yet (/etc/agl-runner/runner.env)"; return 1; }
+  for f in "run-loop.sh:/opt/agl-runner/run-loop.sh" "agl-runner@.service:/etc/systemd/system/agl-runner@.service"; do
+    cmp -s "$repo/kit/${f%%:*}" "$R${f#*:}" || { why="${f#*:} is not kit/${f%%:*}"; return 1; }
+  done
+  [[ "$(stored RUNNER_IMAGE)" == *"@$(tr -d '[:space:]' < "$repo/kit/runner.digest")" ]] ||
+    { why="runner image is not the digest of kit/runner.digest"; return 1; }
+  [ "$(stored DIND_IMAGE)" = "$DIND_IMAGE" ] || { why="sidecar image is not DIND_IMAGE of docker/pins.env"; return 1; }
+  [ "$(stored POOL)" = "$pool" ] || { why="the stored POOL is not $pool"; return 1; }
   for k in GH_ORG ENGINE LABELS LINT_LABELS SLOTS LINT_SLOTS MIRROR_URL GIT_MIRROR HASHSERV_RW HASHSERV_UPSTREAM SIDECAR_RUNTIME \
            DIND CACHE_DIR MEM_LIMIT_RUNNER CPU_LIMIT_RUNNER MEM_LIMIT_SIDECAR CPU_LIMIT_SIDECAR LINT_MEM_LIMIT_RUNNER \
            LINT_CPU_LIMIT_RUNNER LINT_MEM_LIMIT_SIDECAR LINT_CPU_LIMIT_SIDECAR; do
-    [ -z "${!k+x}" ] || [ "${!k}" = "$(stored "$k")" ] || return 1
+    [ -z "${!k+x}" ] || [ "${!k}" = "$(stored "$k")" ] || { why="the given $k is not the stored one"; return 1; }
   done
-  for i in $(slot_numbers); do systemctl is-enabled --quiet "agl-runner@$i.service" || return 1; done
+  for i in $(slot_numbers); do
+    systemctl is-enabled --quiet "agl-runner@$i.service" || { why="agl-runner@$i.service is not enabled"; return 1; }
+  done
 }
 # deploy.sh stops the slots beyond a smaller number at once, so a surplus slot with a job stops this script first.
 make_runners() {

@@ -32,12 +32,15 @@ guard_build_host "$pool"
 build_host_steps
 
 # --- the areas that releases and nightlies are collected into; the rsync daemon offers them only when they exist
-have_areas() { [ -d "$(cache_dir)/nightly" ] && [ -d "$(cache_dir)/staging" ]; }
+have_areas() {
+  local d
+  for d in nightly staging; do [ -d "$(cache_dir)/$d" ] || { why="missing folder: $(cache_dir)/$d"; return 1; }; done
+}
 make_areas() { install -d -m 0755 "$(cache_dir)/nightly" "$(cache_dir)/staging"; }
 step "nightly and staging areas in the cache" areas
 
 cron_dst="$R/etc/cron.d/agl-builder"
-have_cron() { cron_text builder.cron | cmp -s - "$cron_dst"; }
+have_cron() { same_file <(cron_text builder.cron) "$cron_dst"; }
 make_cron() { install -d -m 0755 "$(dirname "$cron_dst")"; cron_text builder.cron > "$cron_dst"; chmod 0644 "$cron_dst"; }
 step "builder cron (/etc/cron.d/agl-builder)" cron
 
@@ -48,14 +51,19 @@ rs_port="${RSYNCD_PORT:-$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}
 rs_allow="${RSYNCD_ALLOW:-$(rs '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^ALLOW=//p')}"
 have_rsyncd() {
   local areas a
-  [ "$(rs '{{.State.Running}}')" = true ] || return 1
-  [[ "$(rs '{{.Config.Image}}')" == *"@$(tr -d '[:space:]' < "$repo/ci/builder.digest")" ]] || return 1
-  docker exec agl-rsyncd cat /etc/rsyncd.conf 2>/dev/null | cmp -s - "$repo/kit/mirror/rsyncd.conf" || return 1
+  [ "$(rs '{{.State.Running}}')" = true ] || { why="the container agl-rsyncd is not running"; return 1; }
+  [[ "$(rs '{{.Config.Image}}')" == *"@$(tr -d '[:space:]' < "$repo/ci/builder.digest")" ]] ||
+    { why="its image is not the digest of ci/builder.digest"; return 1; }
+  docker exec agl-rsyncd cat /etc/rsyncd.conf 2>/dev/null | cmp -s - "$repo/kit/mirror/rsyncd.conf" ||
+    { why="its rsyncd.conf is not kit/mirror/rsyncd.conf"; return 1; }
   areas="$(rs '{{range .Mounts}}{{println .Destination}}{{end}}')"
-  for a in dl sstate staging nightly; do grep -qx "/srv/agl/$a" <<<"$areas" || return 1; done
-  [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostIp}}{{end}}')" = "$rs_bind" ] || return 1
-  [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostPort}}{{end}}')" = "${rs_port:-873}" ] || return 1
-  [ "$(rs '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^ALLOW=//p')" = "$rs_allow" ]
+  for a in dl sstate staging nightly; do grep -qx "/srv/agl/$a" <<<"$areas" || { why="the area $a is not mounted"; return 1; }; done
+  [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostIp}}{{end}}')" = "$rs_bind" ] ||
+    { why="it is bound to another address than RSYNCD_BIND"; return 1; }
+  [ "$(rs '{{range index .HostConfig.PortBindings "873/tcp"}}{{.HostPort}}{{end}}')" = "${rs_port:-873}" ] ||
+    { why="it is not published on port ${rs_port:-873}"; return 1; }
+  [ "$(rs '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^ALLOW=//p')" = "$rs_allow" ] ||
+    { why="it allows other addresses than RSYNCD_ALLOW"; return 1; }
 }
 make_rsyncd() {
   local old
