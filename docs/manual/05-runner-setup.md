@@ -19,6 +19,29 @@ Per job (`run-loop.sh`): private network, workspace volume and sidecar are prepa
 container using it via `DOCKER_HOST`. All removed after the job. `DIND=0`: no sidecar, kas runs directly in the
 runner image.
 
+## Host scripts (one per role)
+Each role of a machine has one script in `kit/`. It reads the state of the host, changes only what differs from the checkout, and
+is safe to run again. Use it for a new machine and to bring an existing one up to date.
+
+| Role | Script | Brings up |
+|---|---|---|
+| Trusted build host | `trusted-pr-install-host.sh` | runner kit (pool `trusted`), cache areas, prune cron, rsync daemon |
+| Untrusted build host | `untrusted-fork-pr-install-host.sh` | runner kit (pool `untrusted`) |
+| Download server | `download-server-install-host.sh` | pinned cosign, published tree, `promote.env`, clones, server cron, mirror web server |
+
+Run it from a checkout on the host: `sudo kit/<script> --check` (report only), then `sudo kit/<script> --run` (apply; a new
+build host takes its settings from the environment and its token from a file or a prompt, see the header of the script). Without
+`--check` or `--run` it only prints its usage. `--run` first does `git pull --ff-only`. Lines of the report: `ok`, `changed`, `differs` (`--check`), `pending` (a slot runs a job: run it again
+later), `TODO` (a person's task), `note`. Exit status 0 current, 3 not current yet, 1 refused or failed.
+
+- Build roles call `deploy.sh` when the installed loop script, unit, image digests or a given setting differ, and `sysbox.sh`
+  with `SIDECAR_RUNTIME=sysbox-runc`. A stale slot is restarted only when it runs no job. `NODE_TUNING=1` installs the build node
+  tuning once; later runs keep it current.
+- A host keeps one role: each script refuses a host that shows signs of another one.
+- Not changed by any script, only reported: the WireGuard tunnel, `ufw` and `DOCKER-USER` rules, the hash server, a TLS
+  certificate, release keys, GitHub tokens.
+- **Not run on a real host yet** (2026-11-27): tested with stubs (`kit/host_test.sh`). Start with `--check`.
+
 ## Before the first deploy (GitHub side and runner image)
 Done once per organisation. The commands on the host itself are in the Runbook below ("First setup").
 

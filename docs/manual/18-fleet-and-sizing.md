@@ -65,6 +65,9 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
    delete their registrations (`gh api -X DELETE orgs/<org>/actions/runners/<id>`), remove `/etc/agl-runner/runner.env`, revoke the token that registered them.
 
 ### Add a node (checklist)
+After the tunnel (step 2 above), `kit/trusted-pr-install-host.sh --run` covers steps 3 to 5 for the new node and the SCTP block (chapter 05,
+"Host scripts"; not run on a real host yet).
+
 1. Steps 1 to 3 above on the new host; the same `MIRROR_URL` and `HASHSERV_RW`. A second builder joins the same org runner group; labels stay `agl-pr` (no label per machine).
 2. Step 5 per node: each builder needs its own read-only rsync daemon and an entry in the pull cron of the mirror host, or a node's objects reach no other node.
 3. Until the pull is prompt (5 minutes today), stage 2 of a pipeline that runs on another node starts cold; this is the reason the mirror hand-off must be fast
