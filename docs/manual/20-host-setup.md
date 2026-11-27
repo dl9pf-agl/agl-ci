@@ -47,6 +47,10 @@ is only needed on a new build host (or to replace the token); without it `deploy
 | `TODO` | a person has to do it; the script never does it |
 | `note` | information, for example listening ports |
 
+Indented lines under `differs` (and before a change) say why: which file, setting, folder or container property differs. For
+a file the first 20 lines of the difference are shown (`<` kit, `>` this host). Settings of `runner.env` are named, their
+values are not shown.
+
 The last lines count them. Exit status: **0** current with this checkout, **3** something differs or is pending, **1** a step
 failed or the host does not fit the role, **2** wrong usage. `TODO` lines do not change the exit status: read them.
 
