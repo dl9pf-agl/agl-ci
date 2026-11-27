@@ -87,6 +87,7 @@ EOS
 chmod +x "$t/bin/stub"
 for c in id dpkg-query apt-get sha256sum curl git ip ss iptables sysctl systemctl docker; do ln -s stub "$t/bin/$c"; done
 
+me="$(id -u)"   # the test owns the copy of the kit; on a real host only root may
 # host NAME: an empty fake host; run SCRIPT [env...] [arguments, default --run]; calls: what was changed so far
 host() { h="$t/$1"; mkdir -p "$h/etc/cron.d"; : > "$h/calls"; }
 run() { local s="$1" a=(); shift; while [ "$#" -gt 0 ] && [[ "$1" == *=* ]]; do a+=("$1"); shift; done
@@ -94,7 +95,7 @@ run() { local s="$1" a=(); shift; while [ "$#" -gt 0 ] && [[ "$1" == *=* ]]; do 
   bare "$s" "${a[@]}" "$@"; }
 # bare: the same, with exactly the arguments given
 bare() { local s="$1" a=(); shift; while [ "$#" -gt 0 ] && [[ "$1" == *=* ]]; do a+=("$1"); shift; done
-  env "${a[@]}" PATH="$t/bin:$PATH" AGL_ROOT="$h" AGL_NO_PULL=1 bash "$repo/kit/$s-install-host.sh" "$@" > "$h/out" 2>&1; echo $?; }
+  env AGL_OWNER="$me" "${a[@]}" PATH="$t/bin:$PATH" AGL_ROOT="$h" AGL_NO_PULL=1 bash "$repo/kit/$s-install-host.sh" "$@" > "$h/out" 2>&1; echo $?; }
 check() { if [ "$2" = "$3" ]; then echo "ok    $1"; else echo "FAIL  $1: got '$2', want '$3'"; sed 's/^/      /' "$h/out"; fail=1; fi; }
 count() { grep -c -- "$1" "$h/calls"; }
 said() { grep -q -- "$1" "$h/out" && echo yes || echo no; }
@@ -193,6 +194,19 @@ check "the served TLS files are accepted"                  "$(run download-serve
 echo old > "$h/ctr/agl-mirror/files/etc/nginx/nginx.conf"; echo /etc/nginx/mirror/tls/server.conf >> "$h/ctr/agl-mirror/mounts"; echo 9443 > "$h/ctr/agl-mirror/tlsport"; : > "$h/calls"
 check "a TLS mirror is not recreated without certificate"  "$(run download-server) $(count '^mirror') $(said 'serves TLS')" "0 0 yes"
 check "with the served files it is, and keeps its TLS port" "$(run download-server TLS_CERT="$h/new.crt" TLS_KEY="$h/new.key") $(cat "$h/ctr/agl-mirror/tlsport")" "0 9443"
+check "a root-owned checkout is not remarked on"           "$(run download-server --check >/dev/null; said 'another user can change')" no
+chmod g+w "$repo/kit/server.cron"
+check "a script that others can write is a TODO"           "$(run download-server --check >/dev/null; said "can change $repo/kit/server.cron")" yes
+chmod g-w "$repo/kit/server.cron"; chmod o+w "$t"
+check "a writable folder above the checkout is a TODO"     "$(run download-server --check >/dev/null; said "can change $t:")" yes
+chmod o-w "$t"
+check "an owner other than root is a TODO"                 "$(run download-server AGL_OWNER=0 --check >/dev/null; said 'another user can change')" yes
+# a checkout that /root/agl-ci links to keeps that name in the cron file, whatever the real path is
+host linked; mkdir -p "$h/root"; ln -s "$repo" "$h/root/agl-ci"; run trusted-pr >/dev/null
+check "through the link the cron names /root/agl-ci"       "$(grep -c ' /root/agl-ci/kit/prune-builder.sh' "$h/etc/cron.d/agl-builder")" 1
+: > "$h/calls"
+check "and such a host is current"                         "$(run trusted-pr --check) $(said 'differs')" "0 no"
+h="$t/server"
 touch "$h/etc/cron.d/agl-builder"
 check "a builder cron is refused"                          "$(run download-server)" 1
 exit "$fail"

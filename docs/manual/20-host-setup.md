@@ -62,6 +62,10 @@ failed or the host does not fit the role, **2** wrong usage. `TODO` lines do not
 4. Build hosts: the GitHub organisation token (chapter 05, "Before the first deploy").
 5. `git clone https://github.com/<org>/agl-ci /root/agl-ci`.
 
+**Root runs scripts straight from this checkout** (the cron files of a trusted builder and of the download server). It, and
+every folder above it, must belong to root and be writable by root only; the scripts print a `TODO` otherwise. The cron files
+name it `/root/agl-ci` when that path is the checkout or links to it, else its real path.
+
 ## 4 The three roles
 
 ### 4.1 Trusted build host

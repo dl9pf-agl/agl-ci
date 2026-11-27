@@ -135,8 +135,25 @@ make_tuning() { install -D -m 0644 "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tu
 # Build node tuning changes the whole machine: only when asked once (NODE_TUNING=1), then kept current (chapter 05).
 tuning_step() { if [ "${NODE_TUNING:-}" = 1 ] || [ -f "$(tuning_dst)" ]; then step "build node tuning (sysctl)" tuning; fi; }
 
-# A cron file of the kit, with the path of this checkout.
-cron_text() { sed "s|/root/agl-ci|$repo|g" "$repo/kit/$1"; }
+# A cron file of the kit, with the path of this checkout. The kit writes /root/agl-ci: that name stays when it is this
+# checkout, also through a link (the script itself sees the resolved path).
+cron_text() {
+  if [ "$R/root/agl-ci" -ef "$repo" ]; then cat "$repo/kit/$1"; else sed "s|/root/agl-ci|$repo|g" "$repo/kit/$1"; fi
+}
+
+# Root runs scripts of this checkout from cron: no other user may be able to change them, or to swap one of the folders above
+# them. Only reported. AGL_OWNER (one more accepted owner) is for kit/host_test.sh.
+checkout_note() {
+  local p bad
+  p="$(readlink -f "$repo")"
+  bad="$(find "$p/kit" ! -type l \( -perm /022 -o ! \( -uid 0 -o -uid "${AGL_OWNER:-0}" \) \) -print -quit)"
+  while [ -z "$bad" ] && [ "$p" != / ]; do
+    # a folder that others may write is accepted with the sticky bit (/tmp): they cannot rename what is not theirs
+    bad="$(find "$p" -maxdepth 0 \( \( -perm /022 ! -perm -1000 \) -o ! \( -uid 0 -o -uid "${AGL_OWNER:-0}" \) \) -print)"
+    p="$(dirname "$p")"
+  done
+  [ -z "$bad" ] || todo "root runs this checkout from cron, but another user can change $bad: move the checkout or fix the owner"
+}
 
 # What others can reach. Only reported: firewall rules and the tunnel are not changed by these scripts (chapter 18, "IPv6").
 exposure_note() {
