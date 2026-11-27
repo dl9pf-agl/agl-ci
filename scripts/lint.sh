@@ -13,6 +13,7 @@ run ci/scripts/validate_test.sh   # quiet and --verbose output of validate.sh
 run kit/run-loop_test.sh   # which slot gets which label and limits (the lint slots)
 run kit/deploy_test.sh   # what a plain update keeps and how the old limit names become the RUNNER limits
 run kit/sysbox_test.sh   # the Sysbox installation of a build host: fresh, installed, and every refusal (stubs; needs jq)
+run kit/host_test.sh   # the three host scripts, one per role: --check changes nothing, apply converges, wrong role refused (stubs)
 run kit/release/promote_test.sh   # the download server verifies and promotes a release: every fault is refused, manual mode, idempotent (SKIPs without cosign)
 run ci/scripts/premirror_test.sh   # the git mirror rewrite of kas: no backslash, survives kas-container's forwarding (needs python3)
 run ci/scripts/kas-checkout_test.sh   # kas_checkout: from the original URLs when the git mirror cannot serve a repository (stubs, no kas)
