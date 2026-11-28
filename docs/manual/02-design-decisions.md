@@ -89,6 +89,7 @@ Each entry: decision, reason, alternatives not taken.
 | Decision | Reason | Alternatives considered |
 |---|---|---|
 | Sysbox for the Docker sidecar, switched per host (`SIDECAR_RUNTIME`), the privileged sidecar stays the default until the acceptance checks passed | The privileged sidecar can read the host disk; narrowing capabilities broke the inner bridge network (chapter 05) | Capabilities only; one VM per slot (stronger, most work); `DIND=0` |
+| The kit applies only its own `sysctl` file (`sysctl -p`) | `sysctl --system` also applies `/etc/sysctl.conf`, which Debian 13 ignores at boot; it switched an old hardening line on and stopped Sysbox | Apply everything; remove the host's old lines |
 | No container gets `/dev/kvm` | No build or script boots an image; Sysbox cannot pass the device | Keep it for later boot tests |
 | `sysbox.sh` writes Docker's current network settings into `daemon.json` before installing | The package then needs no Docker restart and no container removal | Follow the install guide (remove all containers) |
 | One host script per role, with `--check` and `--run`; no argument does nothing | A host can be looked at safely, and set up or updated the same way | Manual steps; one script with a role option |

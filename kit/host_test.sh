@@ -60,7 +60,7 @@ case "${0##*/}" in
   ip) case "$*" in *global*) ;; *) echo "2: wg0    inet 10.9.0.2/24 scope global wg0" ;; esac ;;
   ss) echo "LISTEN 0 1 ${LISTEN:-0.0.0.0:22} 0.0.0.0:*" ;;
   iptables) echo "-N DOCKER-USER" ;;
-  sysctl) ;;
+  sysctl) echo "sysctl $*" >> "$S/calls" ;;
   systemctl) case "$1" in
       is-active) [ "${STOPPED_SLOT:-}" != "${*: -1}" ] && { [ -f "$S/sysbox" ] || [[ "$*" != *sysbox* ]]; } ;;
       is-enabled) [ -f "$S/units/${*: -1}" ] ;;
@@ -155,6 +155,7 @@ check "no tuning unless asked"                             "$([ -f "$h/etc/sysct
 mkdir -p "$h/etc/sysctl.d"; echo '# edited by hand' > "$h/etc/sysctl.d/90-agl-ci-cache.conf"
 check "--check shows the difference of a file"             "$(run untrusted-fork-pr --check) $(said '> # edited by hand')" "3 yes"
 check "tuning when asked"                                  "$(run untrusted-fork-pr NODE_TUNING=1) $([ -f "$h/etc/sysctl.d/90-agl-ci-cache.conf" ] && echo yes)" "0 yes"
+check "only the kit file is applied, never --system"       "$(count "^sysctl -q -p $h/etc/sysctl.d/90-agl-ci-cache.conf\$") $(count 'sysctl --system')" "1 0"
 check "HASHSERV_RW is refused"                             "$(run untrusted-fork-pr HASHSERV_RW=h:9393)" 1
 mkdir -p "$h/ctr/agl-rsyncd"; echo x > "$h/ctr/agl-rsyncd/image"
 check "an rsync daemon is refused"                         "$(run untrusted-fork-pr)" 1

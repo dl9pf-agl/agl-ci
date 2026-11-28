@@ -131,7 +131,8 @@ make_sctp() { install -d -m 0755 "$(dirname "$(sctp_conf)")"; echo 'install sctp
 
 tuning_dst() { echo "$R/etc/sysctl.d/90-agl-ci-cache.conf"; }
 have_tuning() { same_file "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; }
-make_tuning() { install -D -m 0644 "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; sysctl --system >/dev/null; }
+# Only this file is applied: "sysctl --system" would also apply /etc/sysctl.conf, which Debian 13 ignores at boot.
+make_tuning() { install -D -m 0644 "$repo/kit/sysctl/90-agl-ci-cache.conf" "$(tuning_dst)"; sysctl -q -p "$(tuning_dst)"; }
 # Build node tuning changes the whole machine: only when asked once (NODE_TUNING=1), then kept current (chapter 05).
 tuning_step() { if [ "${NODE_TUNING:-}" = 1 ] || [ -f "$(tuning_dst)" ]; then step "build node tuning (sysctl)" tuning; fi; }
 
