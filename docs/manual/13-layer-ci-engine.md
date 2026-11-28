@@ -121,6 +121,8 @@ failed image publishes the others and never gets the marker. The download server
 (`kit/release/run.sh nightly`) and then points the link `nightly/latest` at the newest run that has at least one image
 (`kit/release/latest-nightly.sh`; the run may still be building or lack a failed image). **A consumer (LAVA) takes the full URL of the image folder, waits until the sums file is there
 and verifies the files against it, and retries if that fails.** No signing: the sums file only says that a download is whole.
+Beside each image folder the step creates an empty `<target>.lava/`, owned by uid 1001 on the builder: the place for the
+results of a LAVA test of that image. The download server pulls it like any other folder.
 Served at the download server's top level, `/nightly/<date>/...` (own nginx location, own mount in `kit/mirror/run.sh`, kept
 apart from `/staging/`'s "waiting for a signature" meaning). Pruned after `NIGHTLY_KEEP_DAYS` (default 7) by
 `kit/release/cleanup-nightly.sh`, same cron file; the builder's own copy goes after 7 days by `kit/prune-builder.sh` (cron, chapter 15), as do a staged release and an

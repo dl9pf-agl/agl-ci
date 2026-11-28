@@ -29,6 +29,7 @@
 #   4. copy them into the hidden work directory .<date>.partial (links resolved), add report-trowl/ and report-vulnscout/ if the
 #      scanners wrote them, then build.toml and the sums file
 #   5. publish: move the finished folder to its public place (one rename on one file system: atomic, nothing half written shows)
+#   6. create the empty folder <target>.lava/ beside it, for the results of a test lab
 set -euo pipefail
 
 die() { echo "nightly-collect: $*" >&2; exit 1; }
@@ -124,6 +125,12 @@ total="$(du -sh "$work" | cut -f1)"
 # 5. Publish.
 mkdir -p "$(dirname "$pub")"
 mv "$work" "$pub"
+
+# 6. The folder for test results, beside the image: a LAVA test agent (user 1001) writes there, and the download-server pull
+#    takes new files like any other. Only root can give it to that user (the tests run without root). A test is only a report:
+#    nothing here may fail the build, whose image is published already.
+mkdir -p "$pub.lava" || echo "nightly-collect: warning: no folder $pub.lava" >&2
+if [ "$(id -u)" = 0 ] && ! chown 1001:1001 "$pub.lava"; then echo "nightly-collect: warning: $pub.lava keeps its owner" >&2; fi
 
 echo "nightly-collect: $target on $machine ($repo): ${#names[@]} files, $total, published: $pub"
 others=()
