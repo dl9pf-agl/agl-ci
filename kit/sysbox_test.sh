@@ -33,11 +33,12 @@ case "${0##*/}" in
   systemctl) [ -z "${INACTIVE:-}" ] ;;
   iptables|ip6tables) echo "-P INPUT DROP" ;;
   ss) echo "LISTEN 0 1 0.0.0.0:22 0.0.0.0:*" ;;
+  sysctl) echo "${PTRACE:-0}" ;;
   dockerd|sleep) ;;
 esac
 EOF
 chmod +x "$t/bin/stub"
-for c in id dpkg curl sha256sum apt-get docker ip systemctl iptables ip6tables ss dockerd sleep; do ln -s stub "$t/bin/$c"; done
+for c in id dpkg curl sha256sum apt-get docker ip systemctl iptables ip6tables ss dockerd sleep sysctl; do ln -s stub "$t/bin/$c"; done
 
 # host NAME: a fresh fake host in $h with the old one-line daemon.json of a build host
 host() { h="$t/$1"; mkdir -p "$h/etc/docker" "$h/state"; echo '{ "data-root": "/home/docker" }' > "$h/etc/docker/daemon.json"
@@ -61,6 +62,9 @@ host bip
 check "another docker0 address is kept as bip"        "$(result BIP=10.200.0.1/24) $(cfg .bip)" 'accepted "10.200.0.1/24"'
 host arch;    check "not amd64"                       "$(result ARCH=arm64) $(cfg .)" "refused $old"
 host bridge;  check "no docker0"                      "$(result NO_BRIDGE=1) $(cfg .)" "refused $old"
+host ptrace;  check "ptrace_scope 3 refuses before any change" "$(result PTRACE=3) $(cfg .)" "refused $old"
+host ptrace2; check "ptrace_scope 2 is accepted"          "$(result PTRACE=2)" accepted
+check "an installed host that turned to ptrace_scope 3"   "$(result PTRACE=3)" refused
 host job;     check "a job is running"                "$(result JOB=1) $(cfg .)" "refused $old"
 host sum;     check "wrong sha256"                    "$(result BAD_SUM=1) $(cfg .)" "refused $old"
 host removes; check "apt would remove a package"      "$(result APT_REMOVES=1) $(cfg .)" "refused $old"
@@ -68,5 +72,5 @@ host aptfail; check "failed install restores the file" "$(result APT_FAILS=1) $(
 host restart; check "a restarted container is reported" "$(result RESTARTS=1)" refused
 host root;    check "root mapped to root"             "$(result MAP=0)" refused
 host overlap; printf 'a:100000:65536\nsysbox:120000:65536\n' > "$h/etc/subuid"
-check "overlapping subordinate ranges"                "$(result)" refused
+check "overlapping ranges refuse before any change"  "$(result) $(cfg .)" "refused $old"
 exit "$fail"

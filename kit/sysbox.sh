@@ -6,8 +6,9 @@
 #   sudo kit/sysbox.sh
 #
 # Flow, in the order it runs:
+#   0. refuse kernel.yama.ptrace_scope 3: Sysbox could not start any container
 #   1. Docker lists sysbox-runc already: skip to the checks (7)
-#   2. refuse: not amd64, no docker0, or a job is running in a runner slot
+#   2. refuse: not amd64, no docker0, overlapping id ranges, or a job is running in a runner slot
 #   3. download the package pinned in docker/pins.env into a new directory and check its sha256
 #   4. ask apt what it would do: it may add packages, never remove or upgrade one
 #   5. daemon.json: add "bip" (what docker0 has now) and Docker's own default address pools where they are missing. With both
@@ -44,9 +45,10 @@ ranges_ok() {
 install_sysbox() {
   # 2. Refuse what cannot work, and do not touch a host while a job runs.
   [ "$(dpkg --print-architecture)" = amd64 ] || die "only amd64 is pinned"
-  local bip n work snap
+  local bip f n work snap
   bip="$(ip -4 -o addr show docker0 | awk '{print $4; exit}')" || bip=""
   [ -n "$bip" ] || die "no address on docker0: is Docker running?"
+  for f in "$etc/subuid" "$etc/subgid"; do [ ! -f "$f" ] || ranges_ok "$f" || die "overlapping ranges in $f"; done
   for n in $(docker ps --format '{{.Names}}' | grep '^agl-r[0-9]' || true); do
     ! docker top "$n" | grep -q Runner.Worker || die "a job is running in $n, try again later"
   done
@@ -90,6 +92,11 @@ install_sysbox() {
   diff "$work/before.txt" "$snap" || die "the host changed (< before, > after); look at it. Work files: $work"
   echo "sysbox: installed $SYSBOX_VERSION; work files $work; old daemon.json (if there was one): $keep"
 }
+
+# 0. Sysbox reads the memory of a container's first process. Yama's ptrace_scope 3 forbids that to everybody, root included,
+#    and only a reboot lowers it again.
+[ "$(sysctl -n kernel.yama.ptrace_scope 2>/dev/null || true)" != 3 ] ||
+  die "kernel.yama.ptrace_scope is 3: set 2 or lower in /etc/sysctl.d/ and reboot (chapter 05, Sysbox sidecar)"
 
 # 1. Install only where the runtime is missing.
 if ! runtime_listed; then install_sysbox; fi
