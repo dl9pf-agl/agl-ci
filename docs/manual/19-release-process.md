@@ -168,7 +168,7 @@ one VM per release build, and a read-only verified cache with a reproducible-bui
 ## 10 Setting up a download server (checklist)
 
 `sudo kit/download-server-install-host.sh --run` does the steps below except the release keys, the rsync daemons on the build hosts
-and the repository settings (chapter 20; not run on a real host yet).
+and the repository settings (chapter 20; run on the existing server, not yet on a new one).
 
 0. The tree of the server is `/srv/agl-permanent` (`RELEASE_ROOT` and `MIRROR_ROOT`): published, permanent data (`dl`, `sstate`, `git`, `release`, `staging`,
    `nightly`). It is not the cache of a builder (`/srv/agl-cache`, `CACHE_DIR`), which is working storage that can be rebuilt; the two are different directories, and

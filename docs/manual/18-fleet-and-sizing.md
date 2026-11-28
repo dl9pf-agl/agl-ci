@@ -66,7 +66,7 @@ Done on 2026-11-13 and 2026-11-16 (the mirror stayed where it was). In this orde
 
 ### Add a node (checklist)
 After the tunnel (step 2 above), `kit/trusted-pr-install-host.sh --run` covers steps 3 to 5 for the new node and the SCTP block (chapter 05,
-"Host scripts"; not run on a real host yet).
+"Host scripts"; run on the existing hosts, not yet on a new one).
 
 1. Steps 1 to 3 above on the new host; the same `MIRROR_URL` and `HASHSERV_RW`. A second builder joins the same org runner group; labels stay `agl-pr` (no label per machine).
 2. Step 5 per node: each builder needs its own read-only rsync daemon and an entry in the pull cron of the mirror host, or a node's objects reach no other node.

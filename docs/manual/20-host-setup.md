@@ -2,8 +2,8 @@
 
 *Read this if you set up a new machine, bring an existing one up to date, or move a build host to Sysbox.*
 
-Status: **implemented**, tested with stubs (`kit/host_test.sh`, `kit/sysbox_test.sh`). **Not run on a real host yet**
-(2026-11-27). Start every real host with `--check`. The manual steps behind the scripts stay in chapters 05, 15, 18 and 19.
+Status: **implemented**, tested with stubs (`kit/host_test.sh`, `kit/sysbox_test.sh`) and run with `--check` and `--run` on
+all three hosts on 2026-11-27. Start every real host with `--check`. The manual steps behind the scripts stay in chapters 05, 15, 18 and 19.
 
 ## 1 Which script on which machine
 | Machine | Script in `kit/` | Pool, labels | Never on this machine |
@@ -140,7 +140,8 @@ first.
 to remove it: `apt-get purge sysbox-ce`, then restore `/etc/docker/daemon.json.agl-before-sysbox` if wanted.
 
 **Acceptance checks** (step 3). Run each once in a privileged sidecar (today's setup, to prove the check can see a
-difference) and once under `sysbox-runc`. A script for this is not part of the kit yet.
+difference) and once under `sysbox-runc`. A script for this is not part of the kit yet. Both build hosts passed these checks on
+2026-11-27 (results: chapter 05, "First rollout").
 
 | Check | Privileged | Sysbox must |
 |---|---|---|
