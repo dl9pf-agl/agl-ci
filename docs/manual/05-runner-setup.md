@@ -24,8 +24,8 @@ runner image.
 `kit/trusted-pr-install-host.sh`, `kit/untrusted-fork-pr-install-host.sh` and `kit/download-server-install-host.sh` bring a new
 or an existing host to the state of the checkout: `--check` reports, `--run` applies, no argument prints the usage. A build
 role calls `deploy.sh` (and `sysbox.sh` when asked) and restarts idle slots only. **The complete reference, with every step,
-setting, message and the Sysbox rollout, is [20 Host setup and update](20-host-setup.md).** Not run on a real host yet
-(2026-11-27). This chapter explains the runner kit underneath.
+setting, message and the Sysbox rollout, is [20 Host setup and update](20-host-setup.md).** Run on the existing hosts on
+2026-11-27, not yet on a new machine. This chapter explains the runner kit underneath.
 
 ## Before the first deploy (GitHub side and runner image)
 Done once per organisation. The commands on the host itself are in the Runbook below ("First setup").
@@ -425,8 +425,9 @@ sidecar still sees all host devices, this one included. A boot-test job needs it
 ## Sysbox sidecar
 `SIDECAR_RUNTIME=sysbox-runc` starts the sidecar under [Sysbox](https://github.com/nestybox/sysbox) instead of `--privileged`.
 Root in the sidecar is then an unprivileged user on the host, and `/proc/sys` is virtualised. The runner container does not
-change. **Not tried on a build host yet** (2026-11-27): what is said here about Sysbox itself comes from its documentation and
-issue tracker.
+change. **In use on the trusted and on the untrusted build host since 2026-11-27** (Debian 13, kernel 6.12.118, `docker.io`
+26.1.5, Sysbox 0.7.2); what was observed is in "First rollout" below. What is said about long-term behaviour comes from the
+documentation and issue tracker of Sysbox.
 
 **Needs `kernel.yama.ptrace_scope` 2 or lower.** Sysbox reads the memory of each container's first process; value 3 forbids that
 even to root, and every container then fails with `unable to get inode for netns /proc/<pid>/ns/net`. `sysbox.sh` refuses such a
@@ -439,7 +440,7 @@ while running).
 pinned in `docker/pins.env` where the runtime is missing, then checks it. A failure stops the deploy; there is no fallback to the
 privileged sidecar. **To look first and switch later**, run `sudo kit/sysbox.sh` alone: the slots keep their setting.
 
-**What the installation does** (read from the package scripts of 0.7.2, tested against stubs only):
+**What the installation does** (read from the package scripts of 0.7.2; seen the same on both hosts):
 - `daemon.json` gets `bip` (the address `docker0` has now) and Docker's own default address pools where they are missing, so the
   package needs **no Docker restart and no container removal** (its install guide asks for both); it adds the runtime and sends
   Docker a `SIGHUP`. The old file is kept as `daemon.json.agl-before-sysbox`.
@@ -458,7 +459,7 @@ removes the old package first (`apt-get purge sysbox-ce`, slots stopped).
 | Risk | What it means |
 |---|---|
 | Hang of `sysbox-fs` under many nested containers ([sysbox#1018](https://github.com/nestybox/sysbox/issues/1018), also Debian 13, kernel 6.12; open) | reported with v0.7.1, not shown fixed in v0.7.2. Containers stop answering; a reboot recovers. Watch for processes in state `D` |
-| Debian 13 is not in the list of supported distributions | the acceptance checks below decide |
+| Debian 13 is not in the list of supported distributions | the acceptance checks below decide; they passed on both hosts |
 | `kernel.yama.ptrace_scope = 3` | no Sysbox container starts (see above) |
 | No `/dev/kvm` in a Sysbox container ([sysbox#717](https://github.com/nestybox/sysbox/issues/717)) | the kit passes none anyway; a boot-test job needs another way |
 | All slots share one user mapping (community edition) and one kernel, and the cache stays read-write | weaker than one VM per slot |
@@ -468,6 +469,16 @@ not readable and `core_pattern` of the host cannot be changed, also from a neste
 sidecar both write the workspace volume; the cache keeps its owners, also for the `--user 0` collect step; a user plus network
 namespace works in a nested builder container (bitbake); a real image build passes. The order of the rollout, the checks as a
 table and the way back: chapter 20, "Sysbox on a build host".
+
+**First rollout (2026-11-27).** Both hosts passed the acceptance checks with the same results: the host disk is readable from the
+privileged sidecar and blocked under Sysbox; the host's `core_pattern` stays unchanged; workspace and cache owners as before. A
+user plus network namespace in the builder image fails with `unshare errno 1` in **both** setups, so Sysbox changes nothing there.
+On the untrusted host the first fork pull request build passed (`agl-image-minimal`, qemux86-64: build 9 min, check-layer
+15 min), with no process in state `D` and no hung-task report. The inner Docker data does not appear to land
+on `/` (free space there did not move during the build): `docker:dind` declares `/var/lib/docker` as a volume, so it should lie
+in Docker's data root. Not verified on a host.
+On the trusted host a manual nightly of `meta-agl` then passed (52 min: four images including a qemuarm64 one, check-layer,
+collect and finalize). Long-term stability is not shown yet.
 
 ## Open points
 Necessity of `seccomp=unconfined` on the runner container (bitbake runs in the nested container, not in the runner container; untested); Podman path untested. (The old bare-host test runner
