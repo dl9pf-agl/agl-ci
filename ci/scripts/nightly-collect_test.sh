@@ -47,6 +47,8 @@ if grep -qx 'builder = "example.org/builder@sha256:abc"' "$dest/build.toml"; the
 if (cd "$dest" && sha256sum -c --quiet agl-image-minimal.SHA256SUMS >/dev/null 2>&1) && grep -q ' build.toml$' "$dest/agl-image-minimal.SHA256SUMS" && ! grep -q 'SHA256SUMS' "$dest/agl-image-minimal.SHA256SUMS"; then ok "the sums file verifies, lists build.toml and not itself"; else bad "sums file wrong"; fi
 if [ -z "$(find "$t/stage/.2026-11-26-0300.partial" -name '*.xz')" ] && [ ! -e "$run/COMPLETE" ]; then ok "nothing is left in the work directory and the run is not marked complete"; else bad "work files left, or COMPLETE written"; fi
 
+if [ -d "$dest.lava" ] && [ -z "$(find "$dest.lava" -mindepth 1)" ]; then ok "an empty folder for the test results is beside the image"; else bad "no empty $dest.lava"; fi
+
 # 2. A second image of the same machine with a DIFFERENT kernel and both scanner reports: its own folder, its own kernel.
 mkdeploy "$t/tree2" agl-ivi-demo-flutter kernel-B
 d2="$t/tree2/build/tmp/deploy/images/$M"
