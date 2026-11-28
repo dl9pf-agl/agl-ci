@@ -2,7 +2,8 @@
 
 *Read this if you set up a new machine, bring an existing one up to date, or move a build host to Sysbox.*
 
-Status: **implemented**, tested with stubs (`kit/host_test.sh`, `kit/sysbox_test.sh`) and run with `--check` and `--run` on
+Status: **implemented**, tested with stubs (`kit/host_test.sh`, `kit/sysbox_test.sh`,
+`kit/sysbox-acceptance_test.sh`) and run with `--check` and `--run` on
 all three hosts on 2026-11-27. Start every real host with `--check`. The manual steps behind the scripts stay in chapters 05, 15, 18 and 19.
 
 ## 1 Which script on which machine
@@ -131,7 +132,7 @@ first.
 |---|---|---|---|---|
 | 1 | Look | `kit/<role script> --check` | no | the report is understood |
 | 2 | Install | `sudo kit/sysbox.sh` | no | `sysbox: OK (uid_map: 0 <not 0> ...)` |
-| 3 | Accept | the checks below, in throw-away containers | no | all pass |
+| 3 | Accept | `sudo kit/sysbox-acceptance.sh --run` | no | `SYSBOX ACCEPTANCE PASSED` |
 | 4 | Switch | `sudo SIDECAR_RUNTIME=sysbox-runc kit/<role script> --run` | idle slots restart | `docker inspect agl-d1 --format '{{.HostConfig.Runtime}}'` prints `sysbox-runc` for each |
 | 5 | Build | one real image build on the host | | it passes |
 | 6 | Watch | several days of normal load | | no process in state `D`, no stuck container |
@@ -139,9 +140,10 @@ first.
 **Back out at any point:** `sudo SIDECAR_RUNTIME= kit/<role script> --run` (the empty value counts). The package may stay;
 to remove it: `apt-get purge sysbox-ce`, then restore `/etc/docker/daemon.json.agl-before-sysbox` if wanted.
 
-**Acceptance checks** (step 3). Run each once in a privileged sidecar (today's setup, to prove the check can see a
-difference) and once under `sysbox-runc`. A script for this is not part of the kit yet. Both build hosts passed these checks on
-2026-11-27 (results: chapter 05, "First rollout").
+**Acceptance checks** (step 3). `kit/sysbox-acceptance.sh --run` runs each once in a privileged sidecar (today's setup, to
+prove the check can see a difference) and once under `sysbox-runc`, in throw-away containers; it probes the host disk and
+`core_pattern` as described. Tested with stubs (`kit/sysbox-acceptance_test.sh`); an earlier form of it passed on both build
+hosts on 2026-11-27 (results: chapter 05, "First rollout").
 
 | Check | Privileged | Sysbox must |
 |---|---|---|
