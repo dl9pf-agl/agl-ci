@@ -130,10 +130,12 @@ conditions for it). `deploy.sh` does not apply it because it changes the whole m
 ```
 sysctl -a 2>/dev/null | grep -E '^vm\.(swappiness|vfs_cache_pressure|dirty_)' > ~/sysctl-before.txt     # the old values, for the way back
 sudo install -m 0644 kit/sysctl/90-agl-ci-cache.conf /etc/sysctl.d/
-sudo sysctl --system
+sudo sysctl -p /etc/sysctl.d/90-agl-ci-cache.conf     # this file only, see below
 sysctl vm.swappiness vm.vfs_cache_pressure vm.dirty_background_ratio vm.dirty_ratio vm.dirty_expire_centisecs vm.dirty_writeback_centisecs
 ```
-The last command must print the new values (1, 25, 40, 80, 30000, 3000). Things to know:
+The last command must print the new values (1, 25, 40, 80, 30000, 3000). Do not use `sysctl --system` for this: it also applies
+`/etc/sysctl.conf`, which Debian 13 **ignores at boot**. On a host with an old line there, the command switches that setting on
+until the next boot (2026-11-27: it set `kernel.yama.ptrace_scope = 3`, which only a reboot removes). Things to know:
 - Data written **without `fsync`** can be lost on a crash or power failure, up to the 5 minutes of the window. Build output and sstate objects can be
   rebuilt; data that a program flushes with `fsync` is not affected.
 - **Not on the cache host** (no script checks this for you; the machine whose `CACHE_DIR` is the mirror, or that holds the hash database): there the data is the source of truth.

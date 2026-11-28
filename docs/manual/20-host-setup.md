@@ -83,7 +83,7 @@ An existing host needs no variables: `sudo kit/trusted-pr-install-host.sh --run`
 | packages | `curl jq ca-certificates git rsync` installed | `apt-get install` |
 | Docker is installed and running | `docker info` works | installs `docker.io`, enables the service |
 | SCTP module blocked | `/etc/modprobe.d/disable-sctp.conf` holds the line | writes it (chapter 18) |
-| build node tuning | only looked at with `NODE_TUNING=1` or when installed: file equals the kit's | installs it, `sysctl --system` |
+| build node tuning | only looked at with `NODE_TUNING=1` or when installed: file equals the kit's | installs it, `sysctl -p` of this file only |
 | Sysbox installed | only with `SIDECAR_RUNTIME=sysbox-runc`: runtime listed, services active | `kit/sysbox.sh` (section 5) |
 | runner kit deployed | loop script, unit, image digests, pool and every **given** setting equal; slot units enabled | `kit/deploy.sh` |
 | slot N | running, and started after the loop script and settings were written | `systemctl restart`, **only without a job** |
