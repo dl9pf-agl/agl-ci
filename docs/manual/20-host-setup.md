@@ -169,6 +169,7 @@ A script that stops prints `STOPPED: ...` (the host scripts) or `sysbox: ...`.
 | `the mirror uses the network ...` | `MIRROR_NETWORK` differs from the running mirror | leave the variable out, or follow the printed steps |
 | `the TLS file ... is not what the mirror serves` | `TLS_CERT` or `TLS_KEY` differ from the served copy | leave them out, or follow the printed steps |
 | `TLS_CERT and TLS_KEY must both be given and readable` | one is missing or unreadable | give both |
+| `sysbox: kernel.yama.ptrace_scope is 3 ...` | the setting forbids what Sysbox needs | set 2 in `/etc/sysctl.d/`, reboot (chapter 05, "Sysbox sidecar") |
 | `sysbox: a job is running in agl-rN` | installation while a job runs | try again later |
 | `sysbox: apt would remove or upgrade packages` | installing needs more than new packages | look at the list; do not force it |
 | `sysbox: installation failed, daemon.json restored` | the package install failed | read the apt output above |

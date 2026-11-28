@@ -428,6 +428,12 @@ Root in the sidecar is then an unprivileged user on the host, and `/proc/sys` is
 change. **Not tried on a build host yet** (2026-11-27): what is said here about Sysbox itself comes from its documentation and
 issue tracker.
 
+**Needs `kernel.yama.ptrace_scope` 2 or lower.** Sysbox reads the memory of each container's first process; value 3 forbids that
+even to root, and every container then fails with `unable to get inode for netns /proc/<pid>/ns/net`. `sysbox.sh` refuses such a
+host. Where the hardening is wanted, 2 (only root and `CAP_SYS_PTRACE` may attach) is enough: put
+`kernel.yama.ptrace_scope = 2` in a file of `/etc/sysctl.d/`, remove other lines that set it, and reboot (3 cannot be lowered
+while running).
+
 **One command.** `SIDECAR_RUNTIME=sysbox-runc` on a deploy (a new host: `sudo SIDECAR_RUNTIME=sysbox-runc ./kit/deploy.sh
 <token-file>`; an existing one: `SIDECAR_RUNTIME=sysbox-runc ./kit/update.sh`) runs `kit/sysbox.sh`: it installs the package
 pinned in `docker/pins.env` where the runtime is missing, then checks it. A failure stops the deploy; there is no fallback to the
@@ -453,6 +459,7 @@ removes the old package first (`apt-get purge sysbox-ce`, slots stopped).
 |---|---|
 | Hang of `sysbox-fs` under many nested containers ([sysbox#1018](https://github.com/nestybox/sysbox/issues/1018), also Debian 13, kernel 6.12; open) | reported with v0.7.1, not shown fixed in v0.7.2. Containers stop answering; a reboot recovers. Watch for processes in state `D` |
 | Debian 13 is not in the list of supported distributions | the acceptance checks below decide |
+| `kernel.yama.ptrace_scope = 3` | no Sysbox container starts (see above) |
 | No `/dev/kvm` in a Sysbox container ([sysbox#717](https://github.com/nestybox/sysbox/issues/717)) | the kit passes none anyway; a boot-test job needs another way |
 | All slots share one user mapping (community edition) and one kernel, and the cache stays read-write | weaker than one VM per slot |
 
